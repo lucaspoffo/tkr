@@ -1,0 +1,8 @@
+*.bin
+*.exe
+*.pdb
+*.rdi
+*.exp
+*.sublime-workspace
+*.sublime-project
+*.exe
