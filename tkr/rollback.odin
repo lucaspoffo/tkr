@@ -140,7 +140,7 @@ rollback_set_input_delay :: proc(rollback: ^Rollback_System($Game, $Input), play
 	rollback.input_delay[player_index] = delay
 }
 
-rollback_add_input :: proc(rollback: ^Rollback_System, player_index: int, input: $Input, frame: Frame) -> bool {
+rollback_add_input :: proc(rollback: ^Rollback_System($Game, $Input), player_index: int, input: Input, frame: Frame) -> bool {
 	frame := frame + Frame(rollback.input_delay[player_index])
 
 	if rollback.current_frame + INPUT_QUEUE_LENGTH - MAX_PREDICTION_FRAMES < frame {
@@ -172,13 +172,13 @@ rollback_add_input :: proc(rollback: ^Rollback_System, player_index: int, input:
 }
 
 rollback_advance_frame :: proc(rollback: ^$T/Rollback_System($Game, $Input)) -> []Rollback_Request(Game, Input) {
-	save_current_state :: proc(rollback: ^T) -> Save_Game {
+	save_current_state :: proc(rollback: ^T) -> Save_Game(Game) {
 		index := rollback.current_frame % MAX_PREDICTION_FRAMES
 		rollback.game_states[index].frame = rollback.current_frame
-		return Save_Game { &rollback.game_states[index] }
+		return Save_Game(Game) { &rollback.game_states[index] }
 	}
 
-	load_frame :: proc(rollback: ^T, frame: Frame) -> Load_Game {
+	load_frame :: proc(rollback: ^T, frame: Frame) -> Load_Game(Game) {
 		assert(frame != Null_Frame)
 		assert(frame < rollback.current_frame)
 		assert(frame > rollback.current_frame - MAX_PREDICTION_FRAMES)
@@ -187,10 +187,10 @@ rollback_advance_frame :: proc(rollback: ^$T/Rollback_System($Game, $Input)) -> 
 		assert(rollback.game_states[index].frame == frame)
 		rollback.current_frame = frame
 		
-		return Load_Game { &rollback.game_states[index] }
+		return Load_Game(Game) { &rollback.game_states[index] }
 	}
 
-	requests := make([dynamic]Rollback_Request, allocator = context.temp_allocator)
+	requests := make([dynamic]Rollback_Request(Game, Input), allocator = context.temp_allocator)
 
 	if rollback.current_frame == 0 {
 		append(&requests, save_current_state(rollback))
@@ -279,19 +279,19 @@ rollback_advance_frame :: proc(rollback: ^$T/Rollback_System($Game, $Input)) -> 
 			}
 
 			inputs, statuses := verified_inputs(rollback)
-			append(&requests, Advance_Frame { inputs, statuses, suggested_game_speed })
+			append(&requests, Advance_Frame(Input) { inputs, statuses, suggested_game_speed })
 			rollback.current_frame += 1
 		}
 
 		rollback.first_incorrect_frame = Null_Frame
 	}
 
+	rollback.current_frame += 1
 	append(&requests, save_current_state(rollback))
 
 	// Advance the frame
 	inputs, statuses := verified_inputs(rollback)
-	rollback.current_frame += 1
-	append(&requests, Advance_Frame { inputs, statuses, suggested_game_speed })
+	append(&requests, Advance_Frame(Input) { inputs, statuses, suggested_game_speed })
 
 	return requests[:]
 }
@@ -323,7 +323,7 @@ verified_inputs :: proc(rollback: ^Rollback_System($Game, $Input)) -> (inputs: [
 	return
 }
 
-rollback_update_status_from_remote :: proc(rollback: ^Rollback_System, statuses: [MAX_NUM_PLAYERS]Connection_Status) {
+rollback_update_status_from_remote :: proc(rollback: ^$T/Rollback_System, statuses: [MAX_NUM_PLAYERS]Connection_Status) {
 	for player_index in 0..<rollback.num_players {
 		local_status := &rollback.connection_statuses[player_index]
 		remote_status := statuses[player_index]

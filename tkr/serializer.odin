@@ -5,6 +5,7 @@ import "core:testing"
 import "core:math/rand"
 import "core:net"
 import "core:fmt"
+import "core:log"
 import en "core:encoding/endian"
 import sa "core:container/small_array"
 
@@ -13,142 +14,142 @@ Buffer_Serializer :: struct {
 	offset: int,
 }
 
-bs_get_bool :: proc(oc: ^Buffer_Serializer) -> (bool, bool) {
-	if oc.offset + 1 > len(oc.buffer)  {
+bs_get_bool :: proc(bs: ^Buffer_Serializer) -> (bool, bool) {
+	if bs.offset + 1 > len(bs.buffer)  {
 		return false, false
 	}
 
-	off := oc.offset
-	oc.offset += 1
-	return bool(oc.buffer[off]), true 
+	off := bs.offset
+	bs.offset += 1
+	return bool(bs.buffer[off]), true 
 }
 
-bs_put_bool :: proc(oc: ^Buffer_Serializer, v: bool) -> bool {
-	if len(oc.buffer[oc.offset:]) < 1 {
+bs_put_bool :: proc(bs: ^Buffer_Serializer, v: bool) -> bool {
+	if len(bs.buffer[bs.offset:]) < 1 {
 		return false
 	}
 
-	oc.buffer[oc.offset] = u8(v)
-	oc.offset += 1
+	bs.buffer[bs.offset] = u8(v)
+	bs.offset += 1
 	return true
 }
 
-bs_get_u8 :: proc(oc: ^Buffer_Serializer) -> (u8, bool) {
-	if len(oc.buffer[oc.offset:]) < 1 {
+bs_get_u8 :: proc(bs: ^Buffer_Serializer) -> (u8, bool) {
+	if len(bs.buffer[bs.offset:]) < 1 {
 		return 0, false
 	}
 
-	off := oc.offset
-	oc.offset += 1
-	return oc.buffer[off], true 
+	off := bs.offset
+	bs.offset += 1
+	return bs.buffer[off], true 
 }
 
-bs_put_u8 :: proc(oc: ^Buffer_Serializer, v: u8) -> bool {
-	if len(oc.buffer[oc.offset:]) < 1 {
+bs_put_u8 :: proc(bs: ^Buffer_Serializer, v: u8) -> bool {
+	if len(bs.buffer[bs.offset:]) < 1 {
 		return false
 	}
 
-	oc.buffer[oc.offset] = v
-	oc.offset += 1
+	bs.buffer[bs.offset] = v
+	bs.offset += 1
 	return true
 }
 
-bs_get_u16 :: proc(oc: ^Buffer_Serializer) -> (v: u16, ok: bool) {
-	v = en.get_u16(oc.buffer[oc.offset:], .Little) or_return 
-	oc.offset += 2
+bs_get_u16 :: proc(bs: ^Buffer_Serializer) -> (v: u16, ok: bool) {
+	v = en.get_u16(bs.buffer[bs.offset:], .Little) or_return 
+	bs.offset += 2
 	ok = true
 	return
 }
 
-bs_put_u16 :: proc(oc: ^Buffer_Serializer, v: u16) -> bool {
-	en.put_u16(oc.buffer[oc.offset:], .Little, v) or_return
-	oc.offset += 2
+bs_put_u16 :: proc(bs: ^Buffer_Serializer, v: u16) -> bool {
+	en.put_u16(bs.buffer[bs.offset:], .Little, v) or_return
+	bs.offset += 2
 	return true
 }
 
-bs_get_u32 :: proc(oc: ^Buffer_Serializer) -> (v: u32, ok: bool) {
-	v = en.get_u32(oc.buffer[oc.offset:], .Little) or_return 
-	oc.offset += 4
+bs_get_u32 :: proc(bs: ^Buffer_Serializer) -> (v: u32, ok: bool) {
+	v = en.get_u32(bs.buffer[bs.offset:], .Little) or_return 
+	bs.offset += 4
 	ok = true
 	return
 }
 
-bs_put_u32 :: proc(oc: ^Buffer_Serializer, v: u32) -> bool {
-	en.put_u32(oc.buffer[oc.offset:], .Little, v) or_return
-	oc.offset += 4
+bs_put_u32 :: proc(bs: ^Buffer_Serializer, v: u32) -> bool {
+	en.put_u32(bs.buffer[bs.offset:], .Little, v) or_return
+	bs.offset += 4
 	return true
 }
 
-bs_get_u64 :: proc(oc: ^Buffer_Serializer) -> (v: u64, ok: bool) {
-	v = en.get_u64(oc.buffer[oc.offset:], .Little) or_return 
-	oc.offset += 8
+bs_get_u64 :: proc(bs: ^Buffer_Serializer) -> (v: u64, ok: bool) {
+	v = en.get_u64(bs.buffer[bs.offset:], .Little) or_return 
+	bs.offset += 8
 	ok = true
 	return
 }
 
-bs_put_u64 :: proc(oc: ^Buffer_Serializer, v: u64) -> bool {
-	en.put_u64(oc.buffer[oc.offset:], .Little, v) or_return
-	oc.offset += 8
+bs_put_u64 :: proc(bs: ^Buffer_Serializer, v: u64) -> bool {
+	en.put_u64(bs.buffer[bs.offset:], .Little, v) or_return
+	bs.offset += 8
 	return true
 }
 
-bs_get_i8 :: proc(oc: ^Buffer_Serializer) -> (i8, bool) {
-	if len(oc.buffer[oc.offset:]) < 1 {
+bs_get_i8 :: proc(bs: ^Buffer_Serializer) -> (i8, bool) {
+	if len(bs.buffer[bs.offset:]) < 1 {
 		return 0, false
 	}
 
-	off := oc.offset
-	oc.offset += 1
-	return i8(oc.buffer[off]), true 
+	off := bs.offset
+	bs.offset += 1
+	return i8(bs.buffer[off]), true 
 }
 
-bs_put_i8 :: proc(oc: ^Buffer_Serializer, v: i8) -> bool {
-	if len(oc.buffer[oc.offset:]) < 1 {
+bs_put_i8 :: proc(bs: ^Buffer_Serializer, v: i8) -> bool {
+	if len(bs.buffer[bs.offset:]) < 1 {
 		return false
 	}
 
-	oc.buffer[oc.offset] = u8(v)
-	oc.offset += 1
+	bs.buffer[bs.offset] = u8(v)
+	bs.offset += 1
 	return true
 }
 
-bs_get_i32 :: proc(oc: ^Buffer_Serializer) -> (v: i32, ok: bool) {
-	v = en.get_i32(oc.buffer[oc.offset:], .Little) or_return 
-	oc.offset += 4
+bs_get_i32 :: proc(bs: ^Buffer_Serializer) -> (v: i32, ok: bool) {
+	v = en.get_i32(bs.buffer[bs.offset:], .Little) or_return 
+	bs.offset += 4
 	ok = true
 	return
 }
 
-bs_put_i32 :: proc(oc: ^Buffer_Serializer, v: i32) -> bool {
-	en.put_i32(oc.buffer[oc.offset:], .Little, v) or_return
-	oc.offset += 4
+bs_put_i32 :: proc(bs: ^Buffer_Serializer, v: i32) -> bool {
+	en.put_i32(bs.buffer[bs.offset:], .Little, v) or_return
+	bs.offset += 4
 	return true
 }
 
 
-bs_get_i64 :: proc(oc: ^Buffer_Serializer) -> (v: i64, ok: bool) {
-	v = en.get_i64(oc.buffer[oc.offset:], .Little) or_return 
-	oc.offset += 8
+bs_get_i64 :: proc(bs: ^Buffer_Serializer) -> (v: i64, ok: bool) {
+	v = en.get_i64(bs.buffer[bs.offset:], .Little) or_return 
+	bs.offset += 8
 	ok = true
 	return
 }
 
-bs_put_i64 :: proc(oc: ^Buffer_Serializer, v: i64) -> bool {
-	en.put_i64(oc.buffer[oc.offset:], .Little, v) or_return
-	oc.offset += 8
+bs_put_i64 :: proc(bs: ^Buffer_Serializer, v: i64) -> bool {
+	en.put_i64(bs.buffer[bs.offset:], .Little, v) or_return
+	bs.offset += 8
 	return true
 }
 
-bs_get_f32 :: proc(oc: ^Buffer_Serializer) -> (v: f32, ok: bool) {
-	v = en.get_f32(oc.buffer[oc.offset:], .Little) or_return 
-	oc.offset += 4
+bs_get_f32 :: proc(bs: ^Buffer_Serializer) -> (v: f32, ok: bool) {
+	v = en.get_f32(bs.buffer[bs.offset:], .Little) or_return 
+	bs.offset += 4
 	ok = true
 	return
 }
 
-bs_put_f32 :: proc(oc: ^Buffer_Serializer, v: f32) -> bool {
-	en.put_f32(oc.buffer[oc.offset:], .Little, v) or_return
-	oc.offset += 4
+bs_put_f32 :: proc(bs: ^Buffer_Serializer, v: f32) -> bool {
+	en.put_f32(bs.buffer[bs.offset:], .Little, v) or_return
+	bs.offset += 4
 	return true
 }
 
@@ -170,7 +171,7 @@ bs_get :: proc(bs: ^Buffer_Serializer, $N: typeid) -> (N, bool) {
 }
 
 bs_put_array :: proc(bs: ^Buffer_Serializer, data: ^[]$T) -> bool {
-    if len(bs.buffer[oc.offset:]) < len(data) * size_of(T) {
+    if len(bs.buffer[bs.offset:]) < len(data) * size_of(T) {
     	return false
     }
 
@@ -244,22 +245,22 @@ bs_get_address :: proc(bs: ^Buffer_Serializer) -> (address: net.Address, ok: boo
 	return address, true
 }
 
-bs_get_frame :: proc(oc: ^Buffer_Serializer) -> (frame: Frame, ok: bool) {
-	v := bs_get_i32(oc) or_return
+bs_get_frame :: proc(bs: ^Buffer_Serializer) -> (frame: Frame, ok: bool) {
+	v := bs_get_i32(bs) or_return
 	return Frame(v), true
 }
 
-bs_put_frame :: proc(oc: ^Buffer_Serializer, v: Frame) -> bool {
-	return bs_put_i32(oc, i32(v))
+bs_put_frame :: proc(bs: ^Buffer_Serializer, v: Frame) -> bool {
+	return bs_put_i32(bs, i32(v))
 }
 
-bs_get_time :: proc(oc: ^Buffer_Serializer) -> (t: time.Time, ok: bool) {
-	v := bs_get_i64(oc) or_return
+bs_get_time :: proc(bs: ^Buffer_Serializer) -> (t: time.Time, ok: bool) {
+	v := bs_get_i64(bs) or_return
 	return time.Time { v }, true
 }
 
-bs_put_time :: proc(oc: ^Buffer_Serializer, v: time.Time) -> bool {
-	return bs_put_i64(oc, v._nsec)
+bs_put_time :: proc(bs: ^Buffer_Serializer, v: time.Time) -> bool {
+	return bs_put_i64(bs, v._nsec)
 }
 
 Protocol_Message_Type :: enum u8 {
@@ -274,77 +275,77 @@ Protocol_Message_Type :: enum u8 {
 }
 
 serialize_protocol_message :: proc(buffer: []byte, p2p: ^P2P_Session($Game, $Input), message: Protocol_Message(Input)) -> (offset: int, ok: bool) {
-	oc := Buffer_Serializer { buffer = buffer }
-	o := &oc
-	bs_put_u16(o, message.magic) or_return
+	bs := Buffer_Serializer { buffer = buffer }
+	b := &bs
+	bs_put_u16(b, message.magic) or_return
 	switch &m in message.message {
 	case Sync_Request:
-		bs_put_u8 (o, u8(Protocol_Message_Type.Sync_Request)) or_return
-		bs_put_u32(o, m.random_request) or_return
+		bs_put_u8 (b, u8(Protocol_Message_Type.Sync_Request)) or_return
+		bs_put_u32(b, m.random_request) or_return
 	case Sync_Reply:
-		bs_put_u8 (o, u8(Protocol_Message_Type.Sync_Reply)) or_return
-		bs_put_u32(o, m.random_reply) or_return
+		bs_put_u8 (b, u8(Protocol_Message_Type.Sync_Reply)) or_return
+		bs_put_u32(b, m.random_reply) or_return
 	case Input_Message(Input):
-		bs_put_u8(o, u8(Protocol_Message_Type.Input_Message)) or_return
+		bs_put_u8(b, u8(Protocol_Message_Type.Input_Message)) or_return
 		for i in 0..<p2p.num_players {
-			bs_put_bool(o, m.connection_statuses[i].disconnected) or_return
-			bs_put_frame(o, m.connection_statuses[i].last_received_frame) or_return
+			bs_put_bool(b, m.connection_statuses[i].disconnected) or_return
+			bs_put_frame(b, m.connection_statuses[i].last_received_frame) or_return
 		}
 		
-		bs_put_frame(o, m.ack_frame) or_return
+		bs_put_frame(b, m.ack_frame) or_return
 		start_frame := sa.get(m.pending_inputs, 0).frame
-		bs_put_frame(o, start_frame) or_return
+		bs_put_frame(b, start_frame) or_return
 
-		bs_put_u8(o, u8(sa.len(m.pending_inputs))) or_return
+		bs_put_u8(b, u8(sa.len(m.pending_inputs))) or_return
 		for &pending_input in sa.slice(&m.pending_inputs) {
-			p2p.serialize_input(o, pending_input.input) or_return
+			p2p.serialize_input(b, pending_input.input) or_return
 		}
 	case Quality_Report:
-		bs_put_u8(o, u8(Protocol_Message_Type.Quality_Report)) or_return
-		bs_put_f32(o, m.frame_advantage) or_return
-		bs_put_time(o, m.ping) or_return
+		bs_put_u8(b, u8(Protocol_Message_Type.Quality_Report)) or_return
+		bs_put_f32(b, m.frame_advantage) or_return
+		bs_put_time(b, m.ping) or_return
 	case Quality_Reply:
-		bs_put_u8(o, u8(Protocol_Message_Type.Quality_Reply)) or_return 
-		bs_put_time(o, m.pong) or_return
+		bs_put_u8(b, u8(Protocol_Message_Type.Quality_Reply)) or_return 
+		bs_put_time(b, m.pong) or_return
 	case Keep_Alive:
-		bs_put_u8(o, u8(Protocol_Message_Type.Keep_Alive)) or_return
+		bs_put_u8(b, u8(Protocol_Message_Type.Keep_Alive)) or_return
 	case Checksum_Report:
-		bs_put_u8(o, u8(Protocol_Message_Type.Checksum_Report)) or_return
-		bs_put_frame(o, m.frame) or_return
-		bs_put_u32(o, m.checksum) or_return
+		bs_put_u8(b, u8(Protocol_Message_Type.Checksum_Report)) or_return
+		bs_put_frame(b, m.frame) or_return
+		bs_put_u32(b, m.checksum) or_return
 	case Disconnect_Request:
-		bs_put_u8(o, u8(Protocol_Message_Type.Disconnect_Request)) or_return
+		bs_put_u8(b, u8(Protocol_Message_Type.Disconnect_Request)) or_return
 	}
 
-	return oc.offset, true
+	return bs.offset, true
 }
 
 deserialize_protocol_message :: proc(buffer: []byte, p2p: ^P2P_Session($Game, $Input)) -> (m: Protocol_Message(Input), ok: bool) {
-	oc := Buffer_Serializer { buffer = buffer }
-	o := &oc
+	bs := Buffer_Serializer { buffer = buffer }
+	b := &bs
 
-	m.magic = bs_get_u16(o) or_return
-	m_type := bs_get_u8(o) or_return
+	m.magic = bs_get_u16(b) or_return
+	m_type := bs_get_u8(b) or_return
 
 	message_type := transmute(Protocol_Message_Type)m_type
 	switch message_type {
 	case .Sync_Request:
-		random_request := bs_get_u32(o) or_return
+		random_request := bs_get_u32(b) or_return
 		m.message = Sync_Request { random_request }
 	case .Sync_Reply:
-		random_reply := bs_get_u32(o) or_return
+		random_reply := bs_get_u32(b) or_return
 		m.message = Sync_Reply { random_reply }
 	case .Input_Message:
 		message: Input_Message(Input)
 		for i in 0..<p2p.num_players {
-			message.connection_statuses[i].disconnected = bs_get_bool(o) or_return
-			message.connection_statuses[i].last_received_frame = bs_get_frame(o) or_return
+			message.connection_statuses[i].disconnected = bs_get_bool(b) or_return
+			message.connection_statuses[i].last_received_frame = bs_get_frame(b) or_return
 		}
 
-		message.ack_frame = bs_get_frame(o) or_return
-		start_frame := bs_get_frame(o) or_return
+		message.ack_frame = bs_get_frame(b) or_return
+		start_frame := bs_get_frame(b) or_return
 
-		pending_inputs_len := bs_get_u8(o) or_return
+		pending_inputs_len := bs_get_u8(b) or_return
 		if pending_inputs_len > MAX_PENDING_INPUTS  {
 			return
 		}
@@ -352,23 +353,23 @@ deserialize_protocol_message :: proc(buffer: []byte, p2p: ^P2P_Session($Game, $I
 		for i in 0..<pending_inputs_len {
 			local_input: Local_Input(Input)
 			local_input.frame = start_frame + Frame(i)
-			local_input.input = p2p.deserialize_input(o) or_return
+			local_input.input = p2p.deserialize_input(b) or_return
 			sa.append(&message.pending_inputs, local_input)
 		}
 
 		m.message = message
 	case .Quality_Report:
-		frame_advantage := bs_get_f32(o) or_return
-		ping := bs_get_time(o) or_return
+		frame_advantage := bs_get_f32(b) or_return
+		ping := bs_get_time(b) or_return
 		m.message = Quality_Report { frame_advantage, ping }
 	case .Quality_Reply:
-		pong := bs_get_time(o) or_return
+		pong := bs_get_time(b) or_return
 		m.message = Quality_Reply { pong }
 	case .Keep_Alive:
 		m.message = Keep_Alive {}
 	case .Checksum_Report:
-		frame := bs_get_frame(o) or_return
-		checksum := bs_get_u32(o) or_return
+		frame := bs_get_frame(b) or_return
+		checksum := bs_get_u32(b) or_return
 		m.message = Checksum_Report { frame, checksum }
 	case .Disconnect_Request:
 		m.message = Disconnect_Request {}
@@ -401,7 +402,11 @@ test_serialize_message :: proc(t: ^testing.T) {
 	}
 
 	p2p: P2P_Session(Game, Test_Input)
-	p2p_init(&p2p, 4, 0, serialize_input, deserialize_input)
+	for i in 0..<4 {
+		p2p_add_local_player(&p2p, i)
+	}
+	p2p_init(&p2p, 4, 0, 60.0 / 1000 , serialize_input, deserialize_input)
+
 
 	{ // Protocol Sync Request
 		message := Protocol_Message(Test_Input) {
@@ -443,7 +448,7 @@ test_serialize_message :: proc(t: ^testing.T) {
 		for i in 0..<9 {
 			local_input := Local_Input(Test_Input) {
 				frame = 100 + Frame(i),
-				input = Test_Input { true }
+				input = Test_Input { bool(i % 2) }
 			}
 			sa.append(&message.pending_inputs, local_input)
 		}

@@ -38,7 +38,7 @@ udp_transport_add_client :: proc(udp: ^UDP_Transport, client_id: u64, endpoint: 
 	udp.endpoint_to_client[endpoint] = client_id
 }
 
-udp_transport_poll :: proc(udp: ^UDP_Transport, p2p: ^P2P_Session)  {
+udp_transport_poll :: proc(udp: ^UDP_Transport, p2p: ^$T/P2P_Session)  {
 	buffer: [MAX_PACKET_SIZE]byte
 
 	for {
@@ -56,7 +56,7 @@ udp_transport_poll :: proc(udp: ^UDP_Transport, p2p: ^P2P_Session)  {
 			continue
 		}
 
-		message, ok := deserialize_protocol_message(buffer[:bytes_read], udp.num_players)
+		message, ok := deserialize_protocol_message(buffer[:bytes_read], p2p)
 		if !ok {
 			log.errorf("Failed to deserialize message from client %v (%v)", client_id, endpoint)
 		}
@@ -65,7 +65,7 @@ udp_transport_poll :: proc(udp: ^UDP_Transport, p2p: ^P2P_Session)  {
 		message_to_send := p2p_process_message(p2p, message)
 
 		if message_to_send.message != nil {
-			offset, ok := serialize_protocol_message(buffer[:], message_to_send, udp.num_players)
+			offset, ok := serialize_protocol_message(buffer[:], p2p, message_to_send)
 			if !ok {
 				log.errorf("Failed to serialize message: %v", message)
 				continue
@@ -75,7 +75,7 @@ udp_transport_poll :: proc(udp: ^UDP_Transport, p2p: ^P2P_Session)  {
 	}
 }
 
-udp_transport_send_messages :: proc(udp: ^UDP_Transport, messages_to_send: []Protocol_Message($Input)) {
+udp_transport_send_messages :: proc(udp: ^UDP_Transport, p2p: ^$T/P2P_Session, messages_to_send: []Protocol_Message($Input)) {
 	buffer: [MAX_PACKET_SIZE]byte
 	for message in messages_to_send {
 		endpoint, found_address := udp.client_to_endpoint[message.client_id]
@@ -84,7 +84,7 @@ udp_transport_send_messages :: proc(udp: ^UDP_Transport, messages_to_send: []Pro
 			continue
 		}
 
-		offset, ok := serialize_protocol_message(buffer[:], message, udp.num_players)
+		offset, ok := serialize_protocol_message(buffer[:], p2p, message)
 		
 		if !ok {
 			log.errorf("Failed to serialize message: %v", message)

@@ -30,7 +30,8 @@ P2P_Session :: struct($Game, $Input: typeid) {
 	local_input_delay: int,
 	syncronizing:      bool,
 
-	dynamic_delay:      bool,
+	fps: f32,
+	dynamic_delay: bool,
 	last_dynamic_delay: time.Time,
 
 	protocols: [MAX_NUM_PLAYERS]P2P_Protocol(Input),
@@ -136,6 +137,7 @@ p2p_init :: proc(
 	p2p: ^P2P_Session($Game, $Input),
 	num_players: int,
 	local_input_delay: int,
+	fps: f32,
 	serialize_input:   #type proc(bs: ^Buffer_Serializer, input: Input) -> bool,
 	deserialize_input: #type proc(bs: ^Buffer_Serializer) -> (input: Input, ok: bool)
 ) {
@@ -151,6 +153,7 @@ p2p_init :: proc(
 	rollback_init(&p2p.rollback, num_players)
 	p2p.num_players = num_players
 	p2p.local_input_delay = local_input_delay
+	p2p.fps = fps
 	p2p.last_local_input_frame_added = Null_Frame
 	p2p.dynamic_delay = true
 	p2p.serialize_input = serialize_input
@@ -169,12 +172,12 @@ p2p_shutdown :: proc(p2p: ^P2P_Session) {
 	global.p2p = {}
 }
 
-p2p_add_local_player :: proc(p2p: ^P2P_Session, player_index: int) {
+p2p_add_local_player :: proc(p2p: ^$T/P2P_Session, player_index: int) {
 	p2p.local_player_index = player_index
 	p2p.num_players += 1
 }
 
-p2p_add_remote_player :: proc(p2p: ^P2P_Session, player_index: int, client_id: u64) {
+p2p_add_remote_player :: proc(p2p: ^$T/P2P_Session, player_index: int, client_id: u64) {
 	p2p.num_players += 1
 
 	// Make sure we are syncronizing only when a remote player is added
@@ -185,11 +188,11 @@ p2p_add_remote_player :: proc(p2p: ^P2P_Session, player_index: int, client_id: u
 	protocol_init(new_protocol, p2p.num_players, client_id, player_index)
 }
 
-p2p_add_local_input :: proc(p2p: ^P2P_Session, player_index: int, input: $Input) -> bool {
+p2p_add_local_input :: proc(p2p: ^$T/P2P_Session, player_index: int, input: $Input) -> bool {
 	return rollback_add_input(&p2p.rollback, player_index, input, p2p.rollback.current_frame)
 }
 
-p2p_set_local_input_delay :: proc(p2p: ^P2P_Session, delay: int) {
+p2p_set_local_input_delay :: proc(p2p: ^$T/P2P_Session, delay: int) {
 	delay := clamp(delay, 0, MAX_LOCAL_DELAY)
 	current_delay := p2p.local_input_delay
 	if delay != current_delay {
@@ -216,17 +219,17 @@ p2p_process_message :: proc(p2p: ^P2P_Session($Game, $Input), message: Protocol_
 		return
 	}
 
-	to_send = protocol_process_message(protocol, &p2p.rollback, message)
+	to_send = protocol_process_message(&p2p.rollback, protocol, message)
 
 	return
 }
 
 p2p_update :: proc(p2p: ^P2P_Session($Game, $Input)) -> []Protocol_Message(Input) {
-	messages := make([dynamic]Protocol_Message, allocator = context.temp_allocator)
+	messages := make([dynamic]Protocol_Message(Input), allocator = context.temp_allocator)
 
 	for i in 0..<p2p.num_protocols {
 		protocol := &p2p.protocols[i]
-		protocol_messages := protocol_update(protocol, &p2p.rollback)
+		protocol_messages := protocol_update(&p2p.rollback, protocol, p2p.fps)
 		append(&messages, ..protocol_messages)
 	}
 
@@ -273,10 +276,10 @@ p2p_update :: proc(p2p: ^P2P_Session($Game, $Input)) -> []Protocol_Message(Input
 	return messages[:]
 }
 
-p2p_replicate_local_input :: proc(p2p: ^P2P_Session, frame: Frame) {
+p2p_replicate_local_input :: proc(p2p: ^P2P_Session($Game, $Input), frame: Frame) {
 	input_index := frame % INPUT_QUEUE_LENGTH
 
-	local_input := Local_Input {
+	local_input := Local_Input(Input) {
 		frame = frame,
 		input = p2p.rollback.players_inputs[p2p.local_player_index][input_index].input
 	}
@@ -295,7 +298,7 @@ p2p_advance_frame :: proc(p2p: ^P2P_Session($Game, $Input)) -> ([]Rollback_Reque
 		return nil, nil
 	}
 
-	messages := make([dynamic]Protocol_Message, allocator = context.temp_allocator)
+	messages := make([dynamic]Protocol_Message(Input), allocator = context.temp_allocator)
 
 	actual_frame := p2p.rollback.current_frame + Frame(p2p.local_input_delay)
 	if p2p.last_local_input_frame_added != actual_frame {
@@ -310,10 +313,10 @@ p2p_advance_frame :: proc(p2p: ^P2P_Session($Game, $Input)) -> ([]Rollback_Reque
 				continue
 			}
 
-			message := Protocol_Message {
+			message := Protocol_Message(Input) {
 				magic = protocol.magic,
 				client_id = protocol.client_id,
-				message = Input_Message {
+				message = Input_Message(Input) {
 					pending_inputs = protocol.pending_local_inputs,
 					ack_frame = protocol.last_received_frame,
 					connection_statuses = p2p.rollback.connection_statuses,
@@ -328,7 +331,7 @@ p2p_advance_frame :: proc(p2p: ^P2P_Session($Game, $Input)) -> ([]Rollback_Reque
 	return requests, messages[:]
 }
 
-protocol_init :: proc(protocol: ^P2P_Protocol, num_players: int, client_id: u64, player_index: int) {
+protocol_init :: proc(protocol: ^$T/P2P_Protocol, num_players: int, client_id: u64, player_index: int) {
 	protocol.client_id = client_id
 	protocol.remote_player_index = player_index
 	for protocol.magic == 0 {
@@ -407,7 +410,7 @@ protocol_process_message :: proc(rollback: ^Rollback_System($Game, $Input), prot
 		}
 
 		protocol.remote_checksum_report = m
-	case Input_Message:
+	case Input_Message(Input):
 		// Discard acked inputs
 		#reverse for pending_input, i in sa.slice(&protocol.pending_local_inputs) {
 			if pending_input.frame <= m.ack_frame {
@@ -446,7 +449,7 @@ protocol_process_message :: proc(rollback: ^Rollback_System($Game, $Input), prot
 			remote_status.last_received_frame = max(remote_status.last_received_frame, m.connection_statuses[i].last_received_frame)
 		}
 	case Disconnect_Request:
-		protocol_disconnect(protocol, rollback)
+		protocol_disconnect(rollback, protocol)
 	case Keep_Alive:
 	}
 
@@ -457,15 +460,15 @@ protocol_process_message :: proc(rollback: ^Rollback_System($Game, $Input), prot
 	return
 }
 
-protocol_update :: proc(rollback: ^Rollback_System($Game, $Input), protocol: P2P_Protocol(Input)) -> []Protocol_Message(Input) {
+protocol_update :: proc(rollback: ^Rollback_System($Game, $Input), protocol: ^P2P_Protocol(Input), fps: f32) -> []Protocol_Message(Input) {
 	now := time.now()
 
-	messages := make([dynamic]Protocol_Message, len = 0, cap = 4, allocator = context.temp_allocator)
+	messages := make([dynamic]Protocol_Message(Input), len = 0, cap = 4, allocator = context.temp_allocator)
 
 	switch protocol.state {
 	case .Syncronizing:
 		if time.diff(protocol.last_send_time, now) > RESEND_SYNC_INTERVAL {
-			message := Protocol_Message {
+			message := Protocol_Message(Input) {
 				magic = protocol.magic,
 				client_id = protocol.client_id,
 				message = Sync_Request { protocol.sync_random_request },
@@ -475,8 +478,8 @@ protocol_update :: proc(rollback: ^Rollback_System($Game, $Input), protocol: P2P
 	case .Running:
 		if time.diff(protocol.last_recv_time, now) > DISCONNECT_TIMEOUT {
 			log.debugf("Protocol %v timed-out", protocol.client_id)
-			protocol_disconnect(protocol, rollback)
-			message := Protocol_Message {
+			protocol_disconnect(rollback, protocol)
+			message := Protocol_Message(Input) {
 				magic = protocol.magic,
 				client_id = protocol.client_id,
 				message = Disconnect_Request {}
@@ -495,8 +498,8 @@ protocol_update :: proc(rollback: ^Rollback_System($Game, $Input), protocol: P2P
 					rollback.confirmed_checksum_report.checksum,
 					protocol.remote_checksum_report.checksum
 				)
-				protocol_disconnect(protocol, rollback)
-				message := Protocol_Message {
+				protocol_disconnect(rollback, protocol)
+				message := Protocol_Message(Input) {
 					magic = protocol.magic,
 					client_id = protocol.client_id,
 					message = Disconnect_Request {}
@@ -509,7 +512,7 @@ protocol_update :: proc(rollback: ^Rollback_System($Game, $Input), protocol: P2P
 		// Update frame advantage
 		if protocol.last_received_frame != Null_Frame {
 			ping := f32(protocol.rtt_secs / 2)
-			remote_frame := f32(protocol.last_received_frame) + (ping * FPS)
+			remote_frame := f32(protocol.last_received_frame) + (ping * fps)
 			protocol.local_frame_advantage = clamp(remote_frame - f32(rollback.current_frame), -MAX_PREDICTION_FRAMES * 2, MAX_PREDICTION_FRAMES * 2)
 			
 			window_index := rollback.current_frame % FRAME_ADVANTAGE_WINDOW_SIZE
@@ -531,10 +534,10 @@ protocol_update :: proc(rollback: ^Rollback_System($Game, $Input), protocol: P2P
 		
 		// Resend pending inputs if some time has passed without receiving inputs
 		if sa.len(protocol.pending_local_inputs) > 0 && time.diff(protocol.running_last_input_send, now) > RESEND_INPUTS_INTERVAL {
-			append(&messages, Protocol_Message {
+			append(&messages, Protocol_Message(Input) {
 				magic = protocol.magic,
 				client_id = protocol.client_id,
-				message = Input_Message {
+				message = Input_Message(Input) {
 					pending_inputs = protocol.pending_local_inputs,
 					ack_frame = protocol.last_received_frame,
 					connection_statuses = rollback.connection_statuses,
@@ -545,7 +548,7 @@ protocol_update :: proc(rollback: ^Rollback_System($Game, $Input), protocol: P2P
 
 		if time.diff(protocol.running_last_quality_report_send, now) > QUALITY_REPORT_INTERVAL {
 			protocol.running_last_quality_report_send = now
-			append(&messages, Protocol_Message {
+			append(&messages, Protocol_Message(Input) {
 				magic = protocol.magic,
 				client_id = protocol.client_id,
 				message = Quality_Report {
@@ -557,7 +560,7 @@ protocol_update :: proc(rollback: ^Rollback_System($Game, $Input), protocol: P2P
 
 		if time.diff(protocol.running_last_checksum_report_send, now) > CHECKSUM_REPORT_INTERVAL && rollback.confirmed_checksum_report.frame != Null_Frame {
 			protocol.running_last_checksum_report_send = now
-			append(&messages, Protocol_Message {
+			append(&messages, Protocol_Message(Input) {
 				magic = protocol.magic,
 				client_id = protocol.client_id,
 				message = rollback.confirmed_checksum_report
@@ -565,7 +568,7 @@ protocol_update :: proc(rollback: ^Rollback_System($Game, $Input), protocol: P2P
 		}
 
 		if len(messages) == 0 && time.diff(protocol.last_send_time, now) > KEEP_ALIVE_INTERVAL {
-			append(&messages, Protocol_Message {
+			append(&messages, Protocol_Message(Input) {
 				magic = protocol.magic,
 				client_id = protocol.client_id,
 				message = Keep_Alive {},
