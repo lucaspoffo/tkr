@@ -21,6 +21,13 @@ WINDOW_HEIGHT :: 600
 FPS :: 60.0
 DELTA :: 1.0 / FPS
 
+PROJECTILE_SPEED :: 220 * DELTA
+PLAYER_SPEED :: 150.0 * DELTA
+ATTACK_COOLDOWN :: 1.5
+
+PLAYER_SIZE :: 16
+PROJECTILE_SIZE :: 4
+
 TIME_SCALE := [tkr.Game_Speed]f32 {
 	.Normal = 1.00,
 	.Slow   = 0.99,
@@ -28,8 +35,6 @@ TIME_SCALE := [tkr.Game_Speed]f32 {
 }
 
 Vec2 :: [2]f32
-
-
 
 Action :: enum {
 	Left,
@@ -41,8 +46,18 @@ Action :: enum {
 }
 
 Player :: struct {
-	color:    rl.Color,
-	position: Vec2
+	input_index:    int,
+	color:          rl.Color,
+	position:       Vec2,
+	look_direction: Vec2,
+	attack_timer:   f32,
+}
+
+Projectile :: struct {
+	color:     rl.Color,
+	position:  Vec2,
+	direction: Vec2,
+	owner:     Handle(Player),
 }
 
 Player_Colors: [tkr.MAX_NUM_PLAYERS]rl.Color = {
@@ -51,7 +66,8 @@ Player_Colors: [tkr.MAX_NUM_PLAYERS]rl.Color = {
 
 Game :: struct {
 	frame: int,
-	players: sa.Small_Array(tkr.MAX_NUM_PLAYERS, Player),
+	players:     Handle_Map(tkr.MAX_NUM_PLAYERS, Player),
+	projectiles: Handle_Map(32, Projectile),
 }
 
 Input :: struct {
@@ -71,7 +87,7 @@ deserialize_input :: proc(bs: ^tkr.Buffer_Serializer) -> (input: Input, ok: bool
 	input.down = transmute(bit_set[Action; u8])down_u8
 
 	pressed_u8   := tkr.bs_get_u8(bs) or_return
-	input.pressed = transmute(bit_set[Action; u8])down_u8
+	input.pressed = transmute(bit_set[Action; u8])pressed_u8
 
 	ok = true
 	return
@@ -104,8 +120,6 @@ vector2_from_input :: proc(input: Input) -> (dir: Vec2) {
 	return linalg.vector_normalize0(dir)
 }
 
-PLAYER_SPEED :: 100.0 * DELTA
-
 game: Game
 
 p2p: tkr.P2P_Session(Game, Input)
@@ -119,8 +133,10 @@ local_input: Input
 
 game_init :: proc(num_players: int) {
 	for i in 0..<num_players {
-		sa.append(&game.players, Player {
+		hm_insert(&game.players, Player {
+			input_index = i,
 			color    = Player_Colors[i],
+			look_direction = { 1, 0 },
 			position = { f32(i) * 100, f32(i) * 100 }
 		})
 	}
@@ -128,15 +144,63 @@ game_init :: proc(num_players: int) {
 
 game_update :: proc(inputs: [tkr.MAX_NUM_PLAYERS]Input) {
 	game.frame += 1
-	for &player, i in sa.slice(&game.players) {
-		dir := vector2_from_input(inputs[i])
-		player.position += dir * PLAYER_SPEED
+	player_it := make_hm_iterator(&game.players)
+	for player, player_handle in iterate_hm(&player_it) {
+		input := inputs[player.input_index]
+		direction := vector2_from_input(input)
+		player.position += direction * PLAYER_SPEED
+		player.attack_timer = max(0, player.attack_timer - DELTA)
+
+		if direction != { 0, 0 } {
+			player.look_direction = direction
+		}
+
+		if player.attack_timer <= 0 && .Shoot in input.pressed {
+			player.attack_timer = ATTACK_COOLDOWN
+			projectile := Projectile {
+				position  = player.position,
+				direction = player.look_direction,
+				color     = player.color,
+				owner     = player_handle
+			}
+			hm_insert(&game.projectiles, projectile)
+		}
+	}
+
+	projectile_it := make_hm_iterator(&game.projectiles)
+	for projectile, projectile_handle in iterate_hm(&projectile_it) {
+		projectile.position += projectile.direction * PROJECTILE_SPEED
+
+		player_it := make_hm_iterator(&game.players)
+		for player, player_handle in iterate_hm(&player_it) {
+			if player_handle == projectile.owner {
+				continue
+			}
+
+			if rl.CheckCollisionCircles(player.position, PLAYER_SIZE, projectile.position, PROJECTILE_SIZE) {
+				hm_remove(&game.projectiles, projectile_handle)
+				continue
+			}
+		}
+
+		if projectile.position.x < 0 || projectile.position.x > WINDOW_WIDTH || projectile.position.y < 0 || projectile.position.y > WINDOW_HEIGHT {
+			hm_remove(&game.projectiles, projectile_handle)
+			fmt.println("Removed projectile:", projectile_handle)
+		}
 	}
 }
 
 game_draw :: proc() {
-	for &player, i in sa.slice(&game.players) {
-		rl.DrawCircleV(player.position, 16, player.color)
+	player_it := make_hm_iterator(&game.players)
+	for player in iterate_hm(&player_it) {
+		size := 1 - (player.attack_timer / ATTACK_COOLDOWN)
+		rl.DrawCircleV(player.position, PLAYER_SIZE * size, player.color)
+		rl.DrawCircleLinesV(player.position, PLAYER_SIZE, player.color)
+	}
+
+	projectile_it := make_hm_iterator(&game.projectiles)
+	for projectile in iterate_hm(&projectile_it) {
+		rl.DrawCircleV(projectile.position, PROJECTILE_SIZE, projectile.color)
 	}
 }
 
@@ -181,6 +245,8 @@ main :: proc() {
 	tkr.p2p_init(&p2p, num_players, 0, FPS, serialize_input, deserialize_input)
 	tkr.udp_transport_init(&transport, num_players, player_addresses[client_index])
 
+	// tkr.rollback_set_forced_rollback_frames(&p2p.rollback, 5)
+
 	fmt.println(num_players, client_index, player_addresses)
 
 	rl.InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "TKR Example")
@@ -215,8 +281,6 @@ main :: proc() {
 			requests, messages_to_send := tkr.p2p_advance_frame(&p2p)
 			tkr.udp_transport_send_messages(&transport, &p2p, messages_to_send)
 
-			rollback_happened := false
-
 			for request in requests {
 				switch &r in request {
 				case tkr.Save_Game(Game):
@@ -240,7 +304,6 @@ main :: proc() {
 		if num_ticks > 0 {
 			local_input = {}
 		}
-
 
 		rl.BeginDrawing()
 		rl.ClearBackground(rl.BLACK)

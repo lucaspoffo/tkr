@@ -112,7 +112,7 @@ rollback_init :: proc(rollback: ^Rollback_System($Game, $Input), num_players: in
 	rollback.confirmed_checksum_report.frame = Null_Frame
 }
 
-rollback_set_forced_rollback_frames :: proc(rollback: ^Rollback_System, num_frames: int) {
+rollback_set_forced_rollback_frames :: proc(rollback: ^$T/Rollback_System, num_frames: int) {
 	rollback.forced_rollback_frames = clamp(num_frames, 0, MAX_PREDICTION_FRAMES - 1)
 }
 
@@ -286,12 +286,12 @@ rollback_advance_frame :: proc(rollback: ^$T/Rollback_System($Game, $Input)) -> 
 		rollback.first_incorrect_frame = Null_Frame
 	}
 
-	rollback.current_frame += 1
 	append(&requests, save_current_state(rollback))
 
 	// Advance the frame
 	inputs, statuses := verified_inputs(rollback)
 	append(&requests, Advance_Frame(Input) { inputs, statuses, suggested_game_speed })
+	rollback.current_frame += 1
 
 	return requests[:]
 }
