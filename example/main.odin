@@ -21,11 +21,19 @@ WINDOW_HEIGHT :: 600
 FPS :: 60.0
 DELTA :: 1.0 / FPS
 
-PROJECTILE_SPEED :: 220 * DELTA
-PLAYER_SPEED :: 150.0 * DELTA
-ATTACK_COOLDOWN :: 1.5
+PROJECTILE_SPEED :: 600 * DELTA
+PLAYER_SPEED :: 300.0 * DELTA
+ATTACK_COOLDOWN :: 1.0
+DASH_SPEED :: 550 * DELTA
+DASH_DURATION :: 0.300
+DASH_COOLDOWN :: 2.0
+
+DEATH_DURATION :: 0.5
+RESPAWN_DURATION :: 1.5
+INVUNERABLE_DURATION :: 2.5
 
 PLAYER_SIZE :: 16
+PLAYER_DASH_SIZE :: 8
 PROJECTILE_SIZE :: 4
 
 TIME_SCALE := [tkr.Game_Speed]f32 {
@@ -45,12 +53,37 @@ Action :: enum {
 	Dash
 }
 
+Player_State :: enum {
+	Dead,
+	Respawn,
+	Dash,
+	Normal
+}
+
 Player :: struct {
-	input_index:    int,
-	color:          rl.Color,
-	position:       Vec2,
+	score: int,
+	input_index: int,
+	
+	state: Player_State,
+	color: rl.Color,
+	invunerable: bool,
+	position: Vec2,
 	look_direction: Vec2,
-	attack_timer:   f32,
+	
+	attack_timer: f32,
+	dash_timer:   f32,
+
+	dash_duration:    f32,
+	death_duration:   f32,
+	respawn_duration: f32,
+	invunerable_duration: f32,
+}
+
+Respawn_Position := [tkr.MAX_NUM_PLAYERS]Vec2 {
+	{ WINDOW_WIDTH / 2 ,  100 },
+	{ WINDOW_WIDTH / 2,   WINDOW_HEIGHT - 100 },
+	{ 100,                WINDOW_HEIGHT / 2 },
+	{ WINDOW_WIDTH - 100, WINDOW_HEIGHT / 2 },
 }
 
 Projectile :: struct {
@@ -134,10 +167,11 @@ local_input: Input
 game_init :: proc(num_players: int) {
 	for i in 0..<num_players {
 		hm_insert(&game.players, Player {
+			state = .Normal,
 			input_index = i,
 			color    = Player_Colors[i],
 			look_direction = { 1, 0 },
-			position = { f32(i) * 100, f32(i) * 100 }
+			position = Respawn_Position[i]
 		})
 	}
 }
@@ -148,44 +182,87 @@ game_update :: proc(inputs: [tkr.MAX_NUM_PLAYERS]Input) {
 	for player, player_handle in iterate_hm(&player_it) {
 		input := inputs[player.input_index]
 		direction := vector2_from_input(input)
-		player.position += direction * PLAYER_SPEED
 		player.attack_timer = max(0, player.attack_timer - DELTA)
-
-		if direction != { 0, 0 } {
-			player.look_direction = direction
+		player.dash_timer = max(0, player.dash_timer - DELTA)
+		player.invunerable_duration -= DELTA
+		if player.invunerable_duration <= 0 {
+			player.invunerable = false
 		}
 
-		if player.attack_timer <= 0 && .Shoot in input.pressed {
-			player.attack_timer = ATTACK_COOLDOWN
-			projectile := Projectile {
-				position  = player.position,
-				direction = player.look_direction,
-				color     = player.color,
-				owner     = player_handle
+		switch player.state {
+		case .Dead:
+			player.death_duration -= DELTA
+			if player.death_duration < 0 {
+				player.respawn_duration = RESPAWN_DURATION
+				player.position = Respawn_Position[game.frame % tkr.MAX_NUM_PLAYERS]
+				player.state = .Respawn
+				player.invunerable = true
+				player.invunerable_duration = INVUNERABLE_DURATION
+			} 
+		case .Respawn:
+			player.respawn_duration -= DELTA
+			if player.respawn_duration < 0 {
+				player.state = .Normal
 			}
-			hm_insert(&game.projectiles, projectile)
-		}
+		case .Dash:
+			player.position += player.look_direction * DASH_SPEED
+			player.dash_duration -= DELTA
+			if player.dash_duration <= 0 {
+				player.state = .Normal
+				player.dash_duration = 0
+			}
+		case .Normal:
+			if direction != { 0, 0 } {
+				player.look_direction = direction
+			}
+
+			player.position += direction * PLAYER_SPEED
+			if player.dash_timer <= 0 && .Dash in input.pressed {
+				player.dash_timer = DASH_COOLDOWN
+				player.state = .Dash
+				player.dash_duration = DASH_DURATION
+			}
+
+			if player.attack_timer <= 0 && .Shoot in input.pressed {
+				player.attack_timer = ATTACK_COOLDOWN
+				projectile := Projectile {
+					position  = player.position,
+					direction = player.look_direction,
+					color     = player.color,
+					owner     = player_handle
+				}
+				hm_insert(&game.projectiles, projectile)
+			}
+		}		
 	}
 
 	projectile_it := make_hm_iterator(&game.projectiles)
-	for projectile, projectile_handle in iterate_hm(&projectile_it) {
+	loop_projectile: for projectile, projectile_handle in iterate_hm(&projectile_it) {
 		projectile.position += projectile.direction * PROJECTILE_SPEED
 
 		player_it := make_hm_iterator(&game.players)
 		for player, player_handle in iterate_hm(&player_it) {
-			if player_handle == projectile.owner {
+			if player_handle == projectile.owner || player.state == .Dead {
 				continue
 			}
 
-			if rl.CheckCollisionCircles(player.position, PLAYER_SIZE, projectile.position, PROJECTILE_SIZE) {
+			player_size: f32 = player.state == .Dash ? PLAYER_DASH_SIZE : PLAYER_SIZE
+			if rl.CheckCollisionCircles(player.position, player_size, projectile.position, PROJECTILE_SIZE) {				
+				if !player.invunerable {
+					player.state = .Dead
+					player.death_duration = DEATH_DURATION
+					killer, ok := hm_get(&game.players, projectile.owner)
+					assert(ok)
+					killer.score += 1
+				}
+
 				hm_remove(&game.projectiles, projectile_handle)
-				continue
+				continue loop_projectile
 			}
 		}
 
 		if projectile.position.x < 0 || projectile.position.x > WINDOW_WIDTH || projectile.position.y < 0 || projectile.position.y > WINDOW_HEIGHT {
 			hm_remove(&game.projectiles, projectile_handle)
-			fmt.println("Removed projectile:", projectile_handle)
 		}
 	}
 }
@@ -193,9 +270,26 @@ game_update :: proc(inputs: [tkr.MAX_NUM_PLAYERS]Input) {
 game_draw :: proc() {
 	player_it := make_hm_iterator(&game.players)
 	for player in iterate_hm(&player_it) {
-		size := 1 - (player.attack_timer / ATTACK_COOLDOWN)
-		rl.DrawCircleV(player.position, PLAYER_SIZE * size, player.color)
-		rl.DrawCircleLinesV(player.position, PLAYER_SIZE, player.color)
+		if player.state == .Dead {
+			continue
+		}
+
+		if player.invunerable {
+			INVULNERABLE_BLINK_FRAMES :: 9
+			if (game.frame % (INVULNERABLE_BLINK_FRAMES * 2) < INVULNERABLE_BLINK_FRAMES) {
+				continue
+			}
+		}
+
+		size: f32 = 1 - (player.attack_timer / ATTACK_COOLDOWN)
+		if player.state == .Respawn {
+			size = 1 - (player.respawn_duration / RESPAWN_DURATION)
+		}
+
+		player_size: f32 = player.state == .Dash ? PLAYER_DASH_SIZE : PLAYER_SIZE
+
+		rl.DrawCircleV(player.position, player_size * size, player.color)
+		rl.DrawCircleLinesV(player.position, player_size, player.color)
 	}
 
 	projectile_it := make_hm_iterator(&game.projectiles)
@@ -218,6 +312,8 @@ main :: proc() {
 		mem.tracking_allocator_clear(&tracking_allocator)
 	}
 
+	// The number of player and clients information should come from a Lobby System or Matchmaking,
+	// In the example we pass those in the cmd arguments. 
 	num_players: int = len(os.args) - 2
 	assert(num_players > 0)
 	client_index := strconv.atoi(os.args[1])
@@ -240,14 +336,15 @@ main :: proc() {
 		}
 	}
 
+	fmt.printfln("Initializing the game for player %v (%v) with %v players.", client_index, player_addresses, num_players)
 	game_init(num_players)
 
-	tkr.p2p_init(&p2p, num_players, 0, FPS, serialize_input, deserialize_input)
+	tkr.p2p_init(&p2p, num_players, FPS, serialize_input, deserialize_input)
 	tkr.udp_transport_init(&transport, num_players, player_addresses[client_index])
 
+	// This forces to rollback 5 frames every frame even if no miss predection occured.
+	// Good for testing the determinism of the game_update.
 	// tkr.rollback_set_forced_rollback_frames(&p2p.rollback, 5)
-
-	fmt.println(num_players, client_index, player_addresses)
 
 	rl.InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "TKR Example")
 
@@ -275,7 +372,7 @@ main :: proc() {
 			}
 
 			tkr.p2p_add_local_input(&p2p, client_index, local_input)
-			// Clear pressed input in case of multiple ticks in a single frame 
+			// Clear pressed inputs in case of multiple ticks in a single frame
 			local_input.pressed = {}
 
 			requests, messages_to_send := tkr.p2p_advance_frame(&p2p)
