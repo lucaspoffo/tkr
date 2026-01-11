@@ -25,14 +25,15 @@ FRAME_ADVANTAGE_WINDOW_SIZE :: 24
 DYNAMIC_DELAY_UPDATE_INTERVAL :: 5 * time.Second
 
 P2P_Session :: struct($Game, $Input: typeid) {
-	num_players:       int,
-	num_protocols:     int,
-	local_input_delay: int,
-	syncronizing:      bool,
-
 	fps: f32,
-	dynamic_delay: bool,
+	num_players:   int,
+	num_protocols: int,
+	syncronizing:  bool,
+	
+	local_input_delay:  int,
+	dynamic_delay:      bool,
 	last_dynamic_delay: time.Time,
+	dynamic_delay_calculation: #type proc(rtt_ms: f64) -> (new_input_delay: int),
 
 	protocols: [MAX_NUM_PLAYERS]P2P_Protocol(Input),
 	local_player_index: int,
@@ -135,13 +136,26 @@ Protocol_Message :: struct($Input: typeid) {
 	},
 }
 
+default_dynamic_delay_calculation :: proc(rtt_ms: f64) -> (new_input_delay: int) {
+	switch {
+	case rtt_ms < 50:  new_input_delay = 1
+	case rtt_ms < 100: new_input_delay = 2
+	case rtt_ms < 200: new_input_delay = 3
+	case rtt_ms < 300: new_input_delay = 4
+	case:              new_input_delay = 5
+	}
+	return
+}
+
 p2p_init :: proc(
 	p2p: ^P2P_Session($Game, $Input),
 	num_players: int,
-	local_input_delay: int,
 	fps: f32,
 	serialize_input:   #type proc(bs: ^Buffer_Serializer, input: Input) -> bool,
-	deserialize_input: #type proc(bs: ^Buffer_Serializer) -> (input: Input, ok: bool)
+	deserialize_input: #type proc(bs: ^Buffer_Serializer) -> (input: Input, ok: bool),
+	local_input_delay := 1,
+	dynamic_delay := true,
+	dynamic_delay_calculation := default_dynamic_delay_calculation
 ) {
 	assert(num_players <= MAX_NUM_PLAYERS)
 	assert(local_input_delay < MAX_LOCAL_DELAY)
@@ -157,9 +171,10 @@ p2p_init :: proc(
 	p2p.local_input_delay = local_input_delay
 	p2p.fps = fps
 	p2p.last_local_input_frame_added = Null_Frame
-	p2p.dynamic_delay = true
+	p2p.dynamic_delay = dynamic_delay
 	p2p.serialize_input = serialize_input
 	p2p.deserialize_input = deserialize_input
+	p2p.dynamic_delay_calculation = dynamic_delay_calculation
 
 	for player_index in 0..<num_players {
 		p2p.rollback.connection_statuses[player_index] = Connection_Status { disconnected = false, last_received_frame = Null_Frame }
@@ -247,7 +262,7 @@ p2p_update :: proc(p2p: ^P2P_Session($Game, $Input)) -> []Protocol_Message(Input
 
 		if syncronized {
 			p2p.syncronizing = false
-			log.debug("Syncronized with all clients")
+			log.info("Syncronized with all clients")
 		}
 	} else {
 		now := time.now()
@@ -260,18 +275,9 @@ p2p_update :: proc(p2p: ^P2P_Session($Game, $Input)) -> []Protocol_Message(Input
 				max_rtt_secs = max(max_rtt_secs, protocol.rtt_secs)
 			}
 
-			input_delay := 1
 			max_rtt_ms := max_rtt_secs * 1000
-			if max_rtt_ms > 0 {
-				switch {
-				case max_rtt_ms < 50:  input_delay = 1
-				case max_rtt_ms < 100: input_delay = 2
-				case max_rtt_ms < 200: input_delay = 3
-				case max_rtt_ms < 300: input_delay = 4
-				case:                  input_delay = 5
-				}
-				p2p_set_local_input_delay(p2p, input_delay)
-			}
+			input_delay := p2p.dynamic_delay_calculation(max_rtt_ms)
+			p2p_set_local_input_delay(p2p, input_delay)
 		}
 	}
 

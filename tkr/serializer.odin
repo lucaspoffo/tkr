@@ -409,7 +409,7 @@ test_serialize_message :: proc(t: ^testing.T) {
 	for i in 0..<4 {
 		p2p_add_local_player(&p2p, i)
 	}
-	p2p_init(&p2p, 4, 0, 60.0 / 1000 , serialize_input, deserialize_input)
+	p2p_init(&p2p, 4, 60.0 / 1000 , serialize_input, deserialize_input)
 	now := time.now()
 
 	{ // Protocol Sync Request
