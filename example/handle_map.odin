@@ -1,6 +1,6 @@
 package main
 
-import "core:fmt"
+import "core:log"
 import sa "core:container/small_array"
 
 Handle :: struct($T: typeid) {
@@ -42,7 +42,7 @@ hm_get :: proc(m: ^$M/Handle_Map($N, $T), h: Handle(T)) -> (^T, bool) {
 
 hm_insert :: proc(m: ^$M/Handle_Map($N, $T), value: T) -> (Handle(T), bool) {
 	if int(m.len) >= N {
-		fmt.printfln("Failed to insert value in Handle_Map(%T), max len: %v", value, N)
+		log.errorf("Failed to insert value in Handle_Map(%T), max len: %v", value, N)
 		return Handle(T) {}, false
 	}
 
