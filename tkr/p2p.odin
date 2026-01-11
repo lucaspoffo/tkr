@@ -82,10 +82,12 @@ P2P_Protocol :: struct($Input: typeid) {
 }
 
 Sync_Request :: struct {
+	ping:           time.Time,
 	random_request: u32, // reply with this random value
 }
 
 Sync_Reply :: struct {
+	pong:         time.Time,
 	random_reply: u32,
 }
 
@@ -349,7 +351,17 @@ protocol_init :: proc(protocol: ^$T/P2P_Protocol, num_players: int, client_id: u
 	protocol.sync_remaining_roundtrips = NUM_SYNC_PACKETS
 }
 
-protocol_process_message :: proc(rollback: ^Rollback_System($Game, $Input), protocol: ^P2P_Protocol(Input), message: Protocol_Message(Input)) -> (to_send: Protocol_Message(Input)) {
+protocol_process_message :: proc(rollback: ^Rollback_System($Game, $Input), protocol: ^$P/P2P_Protocol(Input), message: Protocol_Message(Input)) -> (to_send: Protocol_Message(Input)) {
+	update_rtt :: proc(protocol: ^P, now: time.Time, pong: time.Time) {
+		rtt := time.diff(pong, now)
+		rtt_secs := time.duration_seconds(rtt)
+		if rtt_secs < math.F32_EPSILON {
+            protocol.rtt_secs = rtt_secs;
+        } else {
+            protocol.rtt_secs = protocol.rtt_secs * 0.875 + rtt_secs * 0.125;
+        }
+	}
+
 	if protocol.state == .Disconnected {
 		return
 	}
@@ -373,7 +385,7 @@ protocol_process_message :: proc(rollback: ^Rollback_System($Game, $Input), prot
 
 	switch &m in message.message {
 	case Sync_Request:
-		to_send.message = Sync_Reply { m.random_request }
+		to_send.message = Sync_Reply { pong = m.ping, random_reply = m.random_request }
 	case Sync_Reply:
 		if protocol.state != .Syncronizing {
 			return
@@ -383,25 +395,21 @@ protocol_process_message :: proc(rollback: ^Rollback_System($Game, $Input), prot
 			return
 		}
 
+		update_rtt(protocol, now, m.pong)
 		protocol.sync_remaining_roundtrips -= 1
 		if protocol.sync_remaining_roundtrips > 0 {
 			protocol.sync_random_request = rand.uint32() 
-			to_send.message = Sync_Request { protocol.sync_random_request }
+			to_send.message = Sync_Request { ping = now, random_request = protocol.sync_random_request }
 		} else {
 			protocol.state = .Running
 			protocol.remote_magic = message.magic
+			log.infof("Syncronized with client %v with %.3f seconds round time trip", protocol.client_id, protocol.rtt_secs)
 		}
 	case Quality_Report:
 		protocol.remote_frame_advantage = m.frame_advantage
 		to_send.message = Quality_Reply { m.ping }
 	case Quality_Reply:
-		rtt := time.diff(m.pong, now)
-		rtt_secs := time.duration_seconds(rtt)
-		if rtt_secs < math.F32_EPSILON {
-            protocol.rtt_secs = rtt_secs;
-        } else {
-            protocol.rtt_secs = protocol.rtt_secs * 0.875 + rtt_secs * 0.125;
-        }
+		update_rtt(protocol, now, m.pong)
 	case Checksum_Report:
 		if int(m.frame) % CHECKSUM_FRAME_INTERVAL != 0 {
 			// Invalid frame, should be multiple of the interval
@@ -471,7 +479,7 @@ protocol_update :: proc(rollback: ^Rollback_System($Game, $Input), protocol: ^P2
 			message := Protocol_Message(Input) {
 				magic = protocol.magic,
 				client_id = protocol.client_id,
-				message = Sync_Request { protocol.sync_random_request },
+				message = Sync_Request { ping = now, random_request = protocol.sync_random_request },
 			}
 			append(&messages, message)
 		}

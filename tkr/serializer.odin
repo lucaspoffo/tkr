@@ -282,9 +282,11 @@ serialize_protocol_message :: proc(buffer: []byte, p2p: ^P2P_Session($Game, $Inp
 	case Sync_Request:
 		bs_put_u8 (b, u8(Protocol_Message_Type.Sync_Request)) or_return
 		bs_put_u32(b, m.random_request) or_return
+		bs_put_time(b, m.ping) or_return
 	case Sync_Reply:
 		bs_put_u8 (b, u8(Protocol_Message_Type.Sync_Reply)) or_return
 		bs_put_u32(b, m.random_reply) or_return
+		bs_put_time(b, m.pong) or_return
 	case Input_Message(Input):
 		bs_put_u8(b, u8(Protocol_Message_Type.Input_Message)) or_return
 		for i in 0..<p2p.num_players {
@@ -331,10 +333,12 @@ deserialize_protocol_message :: proc(buffer: []byte, p2p: ^P2P_Session($Game, $I
 	switch message_type {
 	case .Sync_Request:
 		random_request := bs_get_u32(b) or_return
-		m.message = Sync_Request { random_request }
+		ping := bs_get_time(b) or_return
+		m.message = Sync_Request { ping, random_request }
 	case .Sync_Reply:
 		random_reply := bs_get_u32(b) or_return
-		m.message = Sync_Reply { random_reply }
+		pong := bs_get_time(b) or_return
+		m.message = Sync_Reply { pong, random_reply }
 	case .Input_Message:
 		message: Input_Message(Input)
 		for i in 0..<p2p.num_players {
@@ -406,12 +410,13 @@ test_serialize_message :: proc(t: ^testing.T) {
 		p2p_add_local_player(&p2p, i)
 	}
 	p2p_init(&p2p, 4, 0, 60.0 / 1000 , serialize_input, deserialize_input)
-
+	now := time.now()
 
 	{ // Protocol Sync Request
 		message := Protocol_Message(Test_Input) {
 			magic = u16(rand.uint32()),
 			message = Sync_Request {
+				ping = now,
 				random_request = 123,
 			},
 		}
@@ -428,6 +433,7 @@ test_serialize_message :: proc(t: ^testing.T) {
 		message := Protocol_Message(Test_Input) {
 			magic = u16(rand.uint32()),
 			message = Sync_Reply {
+				pong = now,
 				random_reply = 12312,
 			},
 		}
