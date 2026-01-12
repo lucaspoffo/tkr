@@ -44,6 +44,7 @@ Player_State :: enum {
 Player :: struct {
 	score: int,
 	input_index: int,
+	disconnected: bool,
 	
 	state: Player_State,
 	color: rl.Color,
@@ -158,11 +159,20 @@ player_size :: proc(player: ^Player) -> f32 {
 	return player.state == .Dash ? PLAYER_DASH_SIZE : PLAYER_SIZE
 }
 
-game_update :: proc(inputs: [tkr.MAX_NUM_PLAYERS]Input) {
+game_update :: proc(inputs: [tkr.MAX_NUM_PLAYERS]Input, status: [tkr.MAX_NUM_PLAYERS]tkr.Input_Status) {
 	game.frame += 1
 	player_it := make_hm_iterator(&game.players)
 	for player, player_handle in iterate_hm(&player_it) {
 		input := inputs[player.input_index]
+		if status[player.input_index] == .Disconnected {
+			player.disconnected = true
+			player.state = .Dead
+		}
+
+		if player.disconnected {
+			continue
+		}
+
 		direction := vector2_from_input(input)
 		player.attack_timer = max(0, player.attack_timer - DELTA)
 		player.dash_timer = max(0, player.dash_timer - DELTA)
@@ -312,6 +322,12 @@ game_draw :: proc() {
 			rl.DrawCircleV({ rect.x + 16, rect.y + 16 }, 8, player.color)
 			score_text := fmt.ctprint(player.score)
 			draw_end_rect_text(score_text, rect, 20, 4, rl.WHITE)
+
+			if player.disconnected {
+				rl.DrawLineEx({ rect.x, rect.y }, { rect.x + rect.width, rect.y + rect.height }, 1, rl.RED)
+				rl.DrawLineEx({ rect.x + rect.width, rect.y }, { rect.x , rect.y + rect.height }, 1, rl.RED)
+			}
+
 			i += 1
 		}
 

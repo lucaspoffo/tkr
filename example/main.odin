@@ -66,7 +66,8 @@ main :: proc() {
 	num_players: int = len(os.args) - 2
 	assert(num_players > 0)
 
-	client_index := strconv.atoi(os.args[1])
+	client_index, ok_index := strconv.parse_int(os.args[1])
+	assert(ok_index)
 	assert(client_index >= 0 && num_players <= tkr.MAX_NUM_PLAYERS && client_index < num_players)
 	
 	when STEAM_ENABLED {
@@ -188,7 +189,7 @@ main :: proc() {
 					game = r.game_rollback_state.state
 				case tkr.Advance_Frame(Input):
 					log.debug("Advance frame: ", game.frame)
-					game_update(r.inputs)
+					game_update(r.inputs, r.status)
 					game_speed = r.suggested_game_speed
 				case tkr.Skip_Frames:
 					log.debug("Skip frames ", r.num_frames)
