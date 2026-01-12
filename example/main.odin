@@ -14,6 +14,8 @@ import "core:time"
 import rl "vendor:raylib"
 import tkr "../tkr"
 
+STEAM_ENABLED :: #config(STEAM_ENABLED, false)
+
 WINDOW_WIDTH :: 800
 WINDOW_HEIGHT :: 600
 
@@ -31,7 +33,10 @@ Vec2 :: [2]f32
 game: Game
 
 p2p: tkr.P2P_Session(Game, Input)
-transport: tkr.UDP_Transport
+
+when !STEAM_ENABLED {
+	udp_transport: tkr.UDP_Transport
+}
 
 previous_tick: time.Tick
 delta_accumulator: f32
@@ -62,30 +67,49 @@ main :: proc() {
 	assert(num_players > 0)
 
 	client_index := strconv.atoi(os.args[1])
-	assert(client_index >= 0 && client_index < num_players)
+	assert(client_index >= 0 && num_players <= tkr.MAX_NUM_PLAYERS && client_index < num_players)
 	
-	player_addresses: [dynamic]net.Endpoint
-	for i in 0..<num_players {
-		player_endpoint, ok := net.parse_endpoint(os.args[i + 2])
-		if !ok {
-			fmt.panicf("Failed to parse client %v address: %v", i, os.args[i + 2])
+	when STEAM_ENABLED {
+		steam_init()
+		for i in 0..<num_players {
+			steam_id, ok := strconv.parse_u64(os.args[i + 2])
+			if !ok {
+				fmt.panicf("Failed to parse client %v steam_id: %v", i, os.args[i + 2])
+			}
+
+			if i == client_index {
+				tkr.p2p_add_local_player(&p2p, i)
+			} else {
+				tkr.p2p_add_remote_player(&p2p, i, steam_id)
+			}
+		}
+		fmt.printfln("Initializing the game for player %v with %v players. (STEAM)", client_index, num_players)
+	} else {
+		player_addresses: [dynamic]net.Endpoint
+		defer delete(player_addresses)
+		for i in 0..<num_players {
+			player_endpoint, ok := net.parse_endpoint(os.args[i + 2])
+			if !ok {
+				fmt.panicf("Failed to parse client %v address: %v", i, os.args[i + 2])
+			}
+
+			append(&player_addresses, player_endpoint)
+			if i == client_index {
+				tkr.p2p_add_local_player(&p2p, i)
+			} else {
+				client_id := u64(i)
+				tkr.p2p_add_remote_player(&p2p, i, client_id)
+				tkr.udp_transport_add_client(&udp_transport, client_id, player_endpoint)
+			}
 		}
 
-		append(&player_addresses, player_endpoint)
-		if i == client_index {
-			tkr.p2p_add_local_player(&p2p, i)
-		} else {
-			client_id := u64(i)
-			tkr.p2p_add_remote_player(&p2p, i, client_id)
-			tkr.udp_transport_add_client(&transport, client_id, player_endpoint)
-		}
+		fmt.printfln("Initializing the game for player %v (%v) with %v players. (UDP)", client_index, player_addresses, num_players)
+		tkr.udp_transport_init(&udp_transport, num_players, player_addresses[client_index])
 	}
 
-	fmt.printfln("Initializing the game for player %v (%v) with %v players.", client_index, player_addresses, num_players)
-	game_init(num_players)
-
 	tkr.p2p_init(&p2p, num_players, FPS, serialize_input, deserialize_input)
-	tkr.udp_transport_init(&transport, num_players, player_addresses[client_index])
+	game_init(num_players)
+	
 
 	// This forces to rollback 5 frames every frame even if no miss predection occured.
 	// Good for testing the determinism of the game_update.
@@ -107,8 +131,13 @@ main :: proc() {
 		}
 
 		messages_to_send := tkr.p2p_update(&p2p)
-		tkr.udp_transport_send_messages(&transport, &p2p, messages_to_send)
-		tkr.udp_transport_poll(&transport, &p2p)
+		when STEAM_ENABLED {
+			tkr.steam_transport_send_messages(&p2p, messages_to_send)
+			tkr.steam_transport_poll(&p2p)
+		} else {
+			tkr.udp_transport_send_messages(&udp_transport, &p2p, messages_to_send)
+			tkr.udp_transport_poll(&udp_transport, &p2p)
+		}
 
 		if rl.IsKeyPressed(.F1) {
 			show_debug_info = !show_debug_info
@@ -139,7 +168,11 @@ main :: proc() {
 			local_input.pressed = {}
 
 			requests, messages_to_send := tkr.p2p_advance_frame(&p2p)
-			tkr.udp_transport_send_messages(&transport, &p2p, messages_to_send)
+			when STEAM_ENABLED {
+				tkr.steam_transport_send_messages(&p2p, messages_to_send)
+			} else {
+				tkr.udp_transport_send_messages(&udp_transport, &p2p, messages_to_send)
+			}
 
 			for request in requests {
 				switch &r in request {
@@ -175,9 +208,16 @@ main :: proc() {
 		} else {
 			game_draw()
 		}
-		
 		rl.EndDrawing()
+
+		when STEAM_ENABLED {
+			steam_run_callbacks()
+		}
 	}
 
-	tkr.udp_transport_shutdown(&transport)
+	when STEAM_ENABLED {
+		tkr.steam_transport_shutdown(&p2p)
+	} else {
+		tkr.udp_transport_shutdown(&udp_transport)
+	}
 }
