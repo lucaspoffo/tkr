@@ -73,6 +73,7 @@ P2P_Protocol :: struct($Input: typeid) {
 	remote_frame_advantage: f32,
 	local_frame_advantage_window:  [FRAME_ADVANTAGE_WINDOW_SIZE]f32,
 	remote_frame_advantage_window: [FRAME_ADVANTAGE_WINDOW_SIZE]f32,
+	average_frames_ahead: f32,
 
 	remote_checksum_report: Checksum_Report,
 
@@ -540,7 +541,8 @@ protocol_update :: proc(rollback: ^Rollback_System($Game, $Input), protocol: ^P2
 			remote_avg := remote_sum / FRAME_ADVANTAGE_WINDOW_SIZE
 
 			average_frames_ahead := (remote_avg - local_avg) / 2
-			rollback.average_frames_ahead[protocol.remote_player_index] = average_frames_ahead 
+			protocol.average_frames_ahead = average_frames_ahead
+			rollback.average_frames_ahead[protocol.remote_player_index] = average_frames_ahead
 		}
 
 		// Update local connection status based on remote connection status

@@ -1,5 +1,8 @@
 package main
 
+import "core:fmt"
+import "core:strings"
+
 import "core:math/linalg"
 
 import rl "vendor:raylib"
@@ -19,6 +22,8 @@ INVUNERABLE_DURATION :: 2.5
 PLAYER_SIZE :: 16
 PLAYER_DASH_SIZE :: 8
 PROJECTILE_SIZE :: 4
+
+PLAYABLE_RECT :: rl.Rectangle { 32, 64, WINDOW_WIDTH - 64, WINDOW_HEIGHT - 96 }
 
 Action :: enum {
 	Left,
@@ -141,6 +146,18 @@ game_init :: proc(num_players: int) {
 	}
 }
 
+clamp_circle_inside_rect :: proc(position: Vec2, radius: f32, rect: rl.Rectangle) -> Vec2 {
+	result := position
+	result.x = clamp(position.x, rect.x + radius, rect.x + rect.width - radius)
+	result.y = clamp(position.y, rect.y + radius, rect.y + rect.height - radius)
+
+	return result
+}
+
+player_size :: proc(player: ^Player) -> f32 {
+	return player.state == .Dash ? PLAYER_DASH_SIZE : PLAYER_SIZE
+}
+
 game_update :: proc(inputs: [tkr.MAX_NUM_PLAYERS]Input) {
 	game.frame += 1
 	player_it := make_hm_iterator(&game.players)
@@ -198,7 +215,9 @@ game_update :: proc(inputs: [tkr.MAX_NUM_PLAYERS]Input) {
 				}
 				hm_insert(&game.projectiles, projectile)
 			}
-		}		
+		}
+
+		player.position = clamp_circle_inside_rect(player.position, player_size(player), PLAYABLE_RECT)
 	}
 
 	projectile_it := make_hm_iterator(&game.projectiles)
@@ -211,8 +230,7 @@ game_update :: proc(inputs: [tkr.MAX_NUM_PLAYERS]Input) {
 				continue
 			}
 
-			player_size: f32 = player.state == .Dash ? PLAYER_DASH_SIZE : PLAYER_SIZE
-			if rl.CheckCollisionCircles(player.position, player_size, projectile.position, PROJECTILE_SIZE) {				
+			if rl.CheckCollisionCircles(player.position, player_size(player), projectile.position, PROJECTILE_SIZE) {				
 				if !player.invunerable {
 					player.state = .Dead
 					player.death_duration = DEATH_DURATION
@@ -226,13 +244,14 @@ game_update :: proc(inputs: [tkr.MAX_NUM_PLAYERS]Input) {
 			}
 		}
 
-		if projectile.position.x < 0 || projectile.position.x > WINDOW_WIDTH || projectile.position.y < 0 || projectile.position.y > WINDOW_HEIGHT {
+		if !rl.CheckCollisionPointRec(projectile.position, PLAYABLE_RECT) {
 			hm_remove(&game.projectiles, projectile_handle)
 		}
 	}
 }
 
 game_draw :: proc() {
+	// Draw Gameplay
 	player_it := make_hm_iterator(&game.players)
 	for player in iterate_hm(&player_it) {
 		if player.state == .Dead {
@@ -260,5 +279,42 @@ game_draw :: proc() {
 	projectile_it := make_hm_iterator(&game.projectiles)
 	for projectile in iterate_hm(&projectile_it) {
 		rl.DrawCircleV(projectile.position, PROJECTILE_SIZE, projectile.color)
+	}
+
+	rl.DrawRectangleLinesEx(PLAYABLE_RECT, 1, rl.WHITE)
+
+	// Draw Interface
+	if show_debug_info {
+		draw_text({ 4,  4 }, 20, rl.LIME, "GAME SPEED: %v", game_speed)
+
+		pings  := make([dynamic]string, context.temp_allocator)
+		frames := make([dynamic]string, context.temp_allocator)
+		for i in 0..<p2p.num_protocols {
+			protocol := &p2p.protocols[i]
+			ping := fmt.tprintf("(P%v: %.1f ms)", protocol.client_id, protocol.rtt_secs * 1000)
+			append(&pings, ping)
+
+			ahead := fmt.tprintf("(P%v: %+.2f)", protocol.client_id, protocol.average_frames_ahead)
+			append(&frames, ahead)
+		}
+		draw_text({ 4, 24 }, 20, rl.LIME, "FRAMES AHEAD: %v", strings.join(frames[:], " | ", context.temp_allocator))
+		draw_text({ 4, 44 }, 20, rl.LIME, "PINGS: %v", strings.join(pings[:], " | ", context.temp_allocator))
+		
+		draw_text({ 500, 4 }, 20, rl.LIME, "DELAY: %v (DYNAMIC %v)", p2p.local_input_delay, p2p.dynamic_delay ? "ON" : "OFF")
+		draw_text({ 32, WINDOW_HEIGHT - 26 }, 20, rl.WHITE, "F4: Toggle dynamic delay | F5/F6: +/- Local input delay")
+	} else {
+		rects := split_rect_horizontal_center_dynamic(game.players.len, { 0, 16, WINDOW_WIDTH, 32 }, 64, 32)
+		player_it = make_hm_iterator(&game.players)
+		i := 0
+		for player in iterate_hm(&player_it) {
+			rect := rects[i]
+			rl.DrawRectangleLinesEx(rect, 1, player.color)
+			rl.DrawCircleV({ rect.x + 16, rect.y + 16 }, 8, player.color)
+			score_text := fmt.ctprint(player.score)
+			draw_end_rect_text(score_text, rect, 20, 4, rl.WHITE)
+			i += 1
+		}
+
+		draw_text({ 32, WINDOW_HEIGHT - 26 }, 20, rl.WHITE, "Move: Arrow Keys | Shoot: Space | Dash: Left Shift | F1: Show debug info")
 	}
 }
