@@ -8,7 +8,9 @@ when receiving the correct input we can rollback and re-simulate the game if nec
 
 TKR has support for UDP and Steam NetworkMessages, you can also write a custom transport if needed.
 
-## Minimal example using UDP 
+https://github.com/user-attachments/assets/3e68f21a-758d-481a-a873-e2d4a7eec40e
+
+## Code sample using UDP
 
 For a complete usage check the example folder.
 
@@ -48,6 +50,7 @@ for game_running {
 	requests, messages_to_send := tkr.p2p_advance_frame(&p2p)
 	tkr.udp_transport_send_messages(&udp_transport, &p2p, messages_to_send)
 
+	// Must handle this requests in order.
 	for request in requests {
 		switch &r in request {
 		case tkr.Save_Game(Game):
