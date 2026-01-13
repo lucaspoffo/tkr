@@ -57,6 +57,7 @@ udp_transport_poll :: proc(udp: ^UDP_Transport, p2p: ^$T/P2P_Session)  {
 		message, ok := deserialize_protocol_message(buffer[:bytes_read], p2p)
 		if !ok {
 			log.errorf("Failed to deserialize message from client %v (%v)", client_id, endpoint)
+			continue
 		}
 
 		message.client_id = client_id
