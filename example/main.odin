@@ -31,7 +31,6 @@ TIME_SCALE := [tkr.Game_Speed]f32 {
 Vec2 :: [2]f32
 
 game: Game
-
 p2p: tkr.P2P_Session(Game, Input)
 
 when !STEAM_ENABLED {
@@ -105,7 +104,7 @@ main :: proc() {
 		}
 
 		fmt.printfln("Initializing the game for player %v (%v) with %v players. (UDP)", client_index, player_addresses, num_players)
-		tkr.udp_transport_init(&udp_transport, num_players, player_addresses[client_index])
+		tkr.udp_transport_init(&udp_transport, player_addresses[client_index])
 	}
 
 	tkr.p2p_init(&p2p, num_players, FPS, serialize_input, deserialize_input)
@@ -113,7 +112,7 @@ main :: proc() {
 	
 
 	// This forces to rollback 5 frames every frame even if no miss predection occured.
-	// Good for testing the determinism of the game_update.
+	// Good for testing the determinism of your game.
 	// tkr.rollback_set_forced_rollback_frames(&p2p.rollback, 5)
 
 	rl.InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "TKR Example")

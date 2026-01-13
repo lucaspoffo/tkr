@@ -12,11 +12,9 @@ UDP_Transport :: struct {
 	socket: net.UDP_Socket,
 	client_to_endpoint: map[u64]net.Endpoint,
 	endpoint_to_client: map[net.Endpoint]u64,
-	num_players: int,
 }
 
-udp_transport_init :: proc(udp: ^UDP_Transport, num_players: int, endpoint: net.Endpoint) -> (err: net.Network_Error) {
-	udp.num_players = num_players
+udp_transport_init :: proc(udp: ^UDP_Transport, endpoint: net.Endpoint) -> (err: net.Network_Error) {
 	socket := net.make_bound_udp_socket(endpoint.address, endpoint.port) or_return
 	net.set_blocking(socket, false) or_return
 	udp.socket = socket
