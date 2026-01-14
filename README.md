@@ -34,7 +34,7 @@ remote_client_id: u64 = 123
 remote_endpoint := net.Endpoint { net.IP4_Loopback, 5001 } 
 
 tkr.p2p_add_local_player(&p2p, local_player_index)
-tkr.p2p_add_remote_player(&p2p, remote_player_index, remote_player_index)
+tkr.p2p_add_remote_player(&p2p, remote_player_index, remote_client_id)
 
 tkr.udp_transport_init(&udp_transport, local_endpoint)
 tkr.udp_transport_add_client(&udp_transport, remote_client_id, remote_endpoint)
