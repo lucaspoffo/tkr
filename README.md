@@ -14,8 +14,6 @@ Features:
 - Detection when the client frame is too far ahead or behind so you can slowdown/speedup the fixed update rate
 	- Check the example to see how to do this
 
-TKR has support for , you can also write a custom transport if needed.
-
 https://github.com/user-attachments/assets/3e68f21a-758d-481a-a873-e2d4a7eec40e
 
 ## Code sample using UDP
