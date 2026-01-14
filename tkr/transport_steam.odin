@@ -29,10 +29,9 @@ when STEAM_ENABLED {
 
 		num_messages := steam.NetworkingMessages_ReceiveMessagesOnChannel(networking_messages, 0, &messages_buffer[0], BATCH_SIZE)
 		for i in 0..<num_messages {
-			defer messages_buffer[i]->pfnRelease()
-			
 			if messages_buffer[i].cbSize <= 0 {
 				log.error("Received message with 0 or less length")
+				messages_buffer[i]->pfnRelease()
 				continue
 			}
 
@@ -42,6 +41,7 @@ when STEAM_ENABLED {
 			message, ok := deserialize_protocol_message(data, p2p)
 			if !ok {
 				log.errorf("Failed to deserialize message from client %v", steam_id)
+				messages_buffer[i]->pfnRelease()
 				continue
 			}
 
@@ -52,12 +52,15 @@ when STEAM_ENABLED {
 				offset, ok := serialize_protocol_message(send_buffer[:], p2p, message_to_send)
 				if !ok  {
 					log.errorf("Failed to serialize message: %v", message_to_send)
+					messages_buffer[i]->pfnRelease()
 					continue
 				}
 				
 				nSendFlags: i32 = steam.nSteamNetworkingSend_UnreliableNoDelay | steam.nSteamNetworkingSend_AutoRestartBrokenSession
 				steam.NetworkingMessages_SendMessageToUser(networking_messages, &net_id, rawptr(&send_buffer), u32(offset), nSendFlags, 0)
 			}
+
+			messages_buffer[i]->pfnRelease()
 		}
 	}
 
