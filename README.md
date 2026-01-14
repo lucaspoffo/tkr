@@ -6,7 +6,15 @@ Rollback Network requires the game to be deterministic, but this allows to only 
 Also, to predict remote players inputs so we can keep simulating gameplay without waiting,
 when receiving the correct input we can rollback and re-simulate the game if necessary.
 
-TKR has support for UDP and Steam NetworkMessages, you can also write a custom transport if needed.
+Features:
+
+- Supports UDP or Steam NetworkMessages transport layer, you can also write a custom transport if needed
+- Automatic input delay based on ping, you can customize or disabled this
+- Desync detection, players will disconnect when their game state diverges
+- Detection when the client frame is too far ahead or behind so you can slowdown/speedup the fixed update rate
+	- Check the example to see how to do this
+
+TKR has support for , you can also write a custom transport if needed.
 
 https://github.com/user-attachments/assets/3e68f21a-758d-481a-a873-e2d4a7eec40e
 
