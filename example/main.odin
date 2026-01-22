@@ -213,6 +213,8 @@ main :: proc() {
 		when STEAM_ENABLED {
 			steam_run_callbacks()
 		}
+
+		free_all(context.temp_allocator)
 	}
 
 	when STEAM_ENABLED {
