@@ -186,10 +186,6 @@ p2p_init :: proc(
 	}
 }
 
-p2p_shutdown :: proc(p2p: ^P2P_Session) {
-	global.p2p = {}
-}
-
 p2p_add_local_player :: proc(p2p: ^$T/P2P_Session, player_index: int) {
 	p2p.local_player_index = player_index
 	p2p.num_players += 1
