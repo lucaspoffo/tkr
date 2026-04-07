@@ -6,7 +6,6 @@ import "core:math"
 import "core:math/rand"
 import "core:reflect"
 import "core:log"
-import sa "core:container/small_array"
 
 NUM_SYNC_PACKETS :: 5
 RESEND_INPUTS_INTERVAL :: 200 * time.Millisecond 
@@ -67,7 +66,7 @@ P2P_Protocol :: struct($Input: typeid) {
 	running_last_quality_report_send: time.Time,
 	running_last_checksum_report_send: time.Time,
 	running_last_input_send:     time.Time,
-	pending_local_inputs: sa.Small_Array(MAX_PENDING_INPUTS, Local_Input(Input)),
+	pending_local_inputs: [dynamic; MAX_PENDING_INPUTS]Local_Input(Input),
 	
 	local_frame_advantage:  f32,
 	remote_frame_advantage: f32,
@@ -110,7 +109,7 @@ Local_Input :: struct($Input: typeid) {
 Input_Message :: struct($Input: typeid) {
 	ack_frame: Frame,
 	connection_statuses: [MAX_NUM_PLAYERS]Connection_Status,
-	pending_inputs: sa.Small_Array(MAX_PENDING_INPUTS, Local_Input(Input)),
+	pending_inputs: [dynamic; MAX_PENDING_INPUTS]Local_Input(Input),
 }
 
 Checksum_Report :: struct {
@@ -171,14 +170,14 @@ p2p_init :: proc(
 	p2p.num_players = num_players
 	p2p.local_input_delay = local_input_delay
 	p2p.fps = fps
-	p2p.last_local_input_frame_added = Null_Frame
+	p2p.last_local_input_frame_added = NULL_FRAME
 	p2p.dynamic_delay = dynamic_delay
 	p2p.serialize_input = serialize_input
 	p2p.deserialize_input = deserialize_input
 	p2p.dynamic_delay_calculation = dynamic_delay_calculation
 
 	for player_index in 0..<num_players {
-		p2p.rollback.connection_statuses[player_index] = Connection_Status { disconnected = false, last_received_frame = Null_Frame }
+		p2p.rollback.connection_statuses[player_index] = Connection_Status { disconnected = false, last_received_frame = NULL_FRAME }
 	}
 
 	if local_input_delay > 0 {
@@ -292,8 +291,7 @@ p2p_replicate_local_input :: proc(p2p: ^P2P_Session($Game, $Input), frame: Frame
 	for i in 0..<p2p.num_protocols {
 		protocol := &p2p.protocols[i]
 		if protocol.state != .Disconnected {
-			ok_append := sa.append(&protocol.pending_local_inputs, local_input)
-			assert(ok_append)
+			append(&protocol.pending_local_inputs, local_input)
 		}
 	}
 }
@@ -343,10 +341,10 @@ protocol_init :: proc(protocol: ^$T/P2P_Protocol, num_players: int, client_id: u
 		protocol.magic = u16(rand.uint32())
 	}
 	protocol.sync_random_request = rand.uint32()
-	protocol.remote_checksum_report.frame = Null_Frame
-	protocol.last_received_frame = Null_Frame
+	protocol.remote_checksum_report.frame = NULL_FRAME
+	protocol.last_received_frame = NULL_FRAME
 	for i in 0..<num_players {
-		protocol.remote_connection_statuses[i].last_received_frame = Null_Frame
+		protocol.remote_connection_statuses[i].last_received_frame = NULL_FRAME
 	}
 
 	protocol.num_players = num_players
@@ -423,22 +421,22 @@ protocol_process_message :: proc(rollback: ^Rollback_System($Game, $Input), prot
 		protocol.remote_checksum_report = m
 	case Input_Message(Input):
 		// Discard acked inputs
-		#reverse for pending_input, i in sa.slice(&protocol.pending_local_inputs) {
+		#reverse for pending_input, i in protocol.pending_local_inputs {
 			if pending_input.frame <= m.ack_frame {
-				small_array_delete_to_index(&protocol.pending_local_inputs, i)
+				dynamic_array_delete_to_index(&protocol.pending_local_inputs, i)
 				break
 			}
 		}
 		
 		// Add inputs to rollback
-		input_loop: for pending_input in sa.slice(&m.pending_inputs) {
+		input_loop: for pending_input in m.pending_inputs {
 			if pending_input.frame <= protocol.last_received_frame {
 				continue
 			}
 			
 			player_index := protocol.remote_player_index
 			current_remote_frame := protocol.last_received_frame
-			if current_remote_frame != Null_Frame && current_remote_frame + 1 != pending_input.frame {
+			if current_remote_frame != NULL_FRAME && current_remote_frame + 1 != pending_input.frame {
 				log.errorf("Input received for Player %v (%v) was not in sequence, expected frame %v got %v", player_index, protocol.client_id, current_remote_frame + 1, pending_input.frame)
 				protocol_disconnect(rollback, protocol)
 				return
@@ -500,7 +498,7 @@ protocol_update :: proc(rollback: ^Rollback_System($Game, $Input), protocol: ^P2
 		}
 
 		// Validate checksum
-		if protocol.remote_checksum_report.frame != Null_Frame && protocol.remote_checksum_report.frame == rollback.confirmed_checksum_report.frame {
+		if protocol.remote_checksum_report.frame != NULL_FRAME && protocol.remote_checksum_report.frame == rollback.confirmed_checksum_report.frame {
 			if protocol.remote_checksum_report.checksum != rollback.confirmed_checksum_report.checksum {
 				log.infof(
 					"Desync detected in protocol %v in frame %v (local %v - %v remote)",
@@ -521,7 +519,7 @@ protocol_update :: proc(rollback: ^Rollback_System($Game, $Input), protocol: ^P2
 		}
 
 		// Update frame advantage
-		if protocol.last_received_frame != Null_Frame {
+		if protocol.last_received_frame != NULL_FRAME {
 			ping := f32(protocol.rtt_secs / 2)
 			remote_frame := f32(protocol.last_received_frame) + (ping * fps)
 			protocol.local_frame_advantage = clamp(remote_frame - f32(rollback.current_frame), -MAX_PREDICTION_FRAMES * 2, MAX_PREDICTION_FRAMES * 2)
@@ -545,7 +543,7 @@ protocol_update :: proc(rollback: ^Rollback_System($Game, $Input), protocol: ^P2
 		rollback_update_status_from_remote(rollback, protocol.remote_connection_statuses)
 		
 		// Resend pending inputs if some time has passed without receiving inputs
-		if sa.len(protocol.pending_local_inputs) > 0 && time.diff(protocol.running_last_input_send, now) > RESEND_INPUTS_INTERVAL {
+		if len(protocol.pending_local_inputs) > 0 && time.diff(protocol.running_last_input_send, now) > RESEND_INPUTS_INTERVAL {
 			append(&messages, Protocol_Message(Input) {
 				magic = protocol.magic,
 				client_id = protocol.client_id,
@@ -570,7 +568,7 @@ protocol_update :: proc(rollback: ^Rollback_System($Game, $Input), protocol: ^P2
 			})
 		}
 
-		if time.diff(protocol.running_last_checksum_report_send, now) > CHECKSUM_REPORT_INTERVAL && rollback.confirmed_checksum_report.frame != Null_Frame {
+		if time.diff(protocol.running_last_checksum_report_send, now) > CHECKSUM_REPORT_INTERVAL && rollback.confirmed_checksum_report.frame != NULL_FRAME {
 			protocol.running_last_checksum_report_send = now
 			append(&messages, Protocol_Message(Input) {
 				magic = protocol.magic,
@@ -602,14 +600,15 @@ protocol_disconnect :: proc(rollback: ^Rollback_System($Game, $Input), protocol:
 	rollback.connection_statuses[protocol.remote_player_index].disconnected = true
 }
 
-small_array_delete_to_index :: proc "contextless" (a: ^$A/sa.Small_Array($N, $T), index: int) -> (ok: bool) {
-	if N > 0 && index < a.len {
+dynamic_array_delete_to_index :: proc "contextless" (array: ^$A/[dynamic; $N]$T, index: int) -> (ok: bool) {
+	current_len := len(array)
+	if N > 0 && index < current_len {
 		end_index := index + 1
-		new_len := a.len - end_index
+		new_len := current_len - end_index
 		if new_len > 0 {
-			copy(a.data[:new_len], a.data[end_index:a.len])
+			copy(array[:new_len], array[end_index:current_len])
 		}
-		a.len = new_len
+		resize(array, new_len)
 		ok = true
 	}
 	return

@@ -2,8 +2,8 @@ package main
 
 import "core:fmt"
 import "core:strings"
-
 import "core:math/linalg"
+import hm "core:container/handle_map"
 
 import rl "vendor:raylib"
 import tkr "../tkr"
@@ -41,7 +41,10 @@ Player_State :: enum {
 	Normal
 }
 
+Player_Handle :: distinct hm.Handle64
+
 Player :: struct {
+	handle: Player_Handle,
 	score: int,
 	input_index: int,
 	disconnected: bool,
@@ -68,11 +71,14 @@ Respawn_Position := [tkr.MAX_NUM_PLAYERS]Vec2 {
 	{ WINDOW_WIDTH - 100, WINDOW_HEIGHT / 2 },
 }
 
+Projectile_Handle :: distinct hm.Handle64
+
 Projectile :: struct {
+	handle:    Projectile_Handle,
 	color:     rl.Color,
 	position:  Vec2,
 	direction: Vec2,
-	owner:     Handle(Player),
+	owner:     Player_Handle,
 }
 
 Player_Colors: [tkr.MAX_NUM_PLAYERS]rl.Color = {
@@ -81,8 +87,8 @@ Player_Colors: [tkr.MAX_NUM_PLAYERS]rl.Color = {
 
 Game :: struct {
 	frame: int,
-	players:     Handle_Map(tkr.MAX_NUM_PLAYERS, Player),
-	projectiles: Handle_Map(32, Projectile),
+	players:     hm.Static_Handle_Map(tkr.MAX_NUM_PLAYERS, Player, Player_Handle),
+	projectiles: hm.Static_Handle_Map(32, Projectile,  Projectile_Handle),
 }
 
 Input :: struct {
@@ -137,13 +143,14 @@ vector2_from_input :: proc(input: Input) -> (dir: Vec2) {
 
 game_init :: proc(num_players: int) {
 	for i in 0..<num_players {
-		hm_insert(&game.players, Player {
+		_, ok := hm.add(&game.players, Player {
 			state = .Normal,
 			input_index = i,
 			color    = Player_Colors[i],
 			look_direction = { 1, 0 },
 			position = Respawn_Position[i]
 		})
+		assert(ok)
 	}
 }
 
@@ -161,8 +168,7 @@ player_size :: proc(player: ^Player) -> f32 {
 
 game_update :: proc(inputs: [tkr.MAX_NUM_PLAYERS]Input, status: [tkr.MAX_NUM_PLAYERS]tkr.Input_Status) {
 	game.frame += 1
-	player_it := make_hm_iterator(&game.players)
-	for player, player_handle in iterate_hm(&player_it) {
+	for it := hm.iterator_make(&game.players); player, player_handle in hm.iterate(&it) {
 		input := inputs[player.input_index]
 		if status[player.input_index] == .Disconnected {
 			player.disconnected = true
@@ -223,19 +229,19 @@ game_update :: proc(inputs: [tkr.MAX_NUM_PLAYERS]Input, status: [tkr.MAX_NUM_PLA
 					color     = player.color,
 					owner     = player_handle
 				}
-				hm_insert(&game.projectiles, projectile)
+				_, ok := hm.add(&game.projectiles, projectile)
+				assert(ok)
 			}
 		}
 
 		player.position = clamp_circle_inside_rect(player.position, player_size(player), PLAYABLE_RECT)
 	}
 
-	projectile_it := make_hm_iterator(&game.projectiles)
-	loop_projectile: for projectile, projectile_handle in iterate_hm(&projectile_it) {
+	projectile_it := hm.iterator_make(&game.projectiles)
+	loop_projectile: for projectile, projectile_handle in hm.iterate(&projectile_it) {
 		projectile.position += projectile.direction * PROJECTILE_SPEED
 
-		player_it := make_hm_iterator(&game.players)
-		for player, player_handle in iterate_hm(&player_it) {
+		for it := hm.iterator_make(&game.players); player, player_handle in hm.iterate(&it) {
 			if player_handle == projectile.owner || player.state == .Dead {
 				continue
 			}
@@ -244,26 +250,25 @@ game_update :: proc(inputs: [tkr.MAX_NUM_PLAYERS]Input, status: [tkr.MAX_NUM_PLA
 				if !player.invunerable {
 					player.state = .Dead
 					player.death_duration = DEATH_DURATION
-					killer, ok := hm_get(&game.players, projectile.owner)
+					killer, ok := hm.get(&game.players, projectile.owner)
 					assert(ok)
 					killer.score += 1
 				}
 
-				hm_remove(&game.projectiles, projectile_handle)
+				hm.remove(&game.projectiles, projectile_handle)
 				continue loop_projectile
 			}
 		}
 
 		if !rl.CheckCollisionPointRec(projectile.position, PLAYABLE_RECT) {
-			hm_remove(&game.projectiles, projectile_handle)
+			hm.remove(&game.projectiles, projectile_handle)
 		}
 	}
 }
 
 game_draw :: proc() {
 	// Draw Gameplay
-	player_it := make_hm_iterator(&game.players)
-	for player in iterate_hm(&player_it) {
+	for it := hm.iterator_make(&game.players); player, player_handle in hm.iterate(&it) {
 		if player.state == .Dead {
 			continue
 		}
@@ -286,8 +291,7 @@ game_draw :: proc() {
 		rl.DrawCircleLinesV(player.position, player_size, player.color)
 	}
 
-	projectile_it := make_hm_iterator(&game.projectiles)
-	for projectile in iterate_hm(&projectile_it) {
+	for it := hm.iterator_make(&game.projectiles); projectile, _ in hm.iterate(&it) {
 		rl.DrawCircleV(projectile.position, PROJECTILE_SIZE, projectile.color)
 	}
 
@@ -313,10 +317,9 @@ game_draw :: proc() {
 		draw_text({ 500, 4 }, 20, rl.LIME, "DELAY: %v (DYNAMIC %v)", p2p.local_input_delay, p2p.dynamic_delay ? "ON" : "OFF")
 		draw_text({ 32, WINDOW_HEIGHT - 26 }, 20, rl.WHITE, "F4: Toggle dynamic delay | F5/F6: +/- Local input delay")
 	} else {
-		rects := split_rect_horizontal_center_dynamic(game.players.len, { 0, 16, WINDOW_WIDTH, 32 }, 64, 32)
-		player_it = make_hm_iterator(&game.players)
+		rects := split_rect_horizontal_center_dynamic(hm.len(game.players), { 0, 16, WINDOW_WIDTH, 32 }, 64, 32)
 		i := 0
-		for player in iterate_hm(&player_it) {
+		for it := hm.iterator_make(&game.players); player, player_handle in hm.iterate(&it) {
 			rect := rects[i]
 			rl.DrawRectangleLinesEx(rect, 1, player.color)
 			rl.DrawCircleV({ rect.x + 16, rect.y + 16 }, 8, player.color)

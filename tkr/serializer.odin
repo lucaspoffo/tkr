@@ -6,8 +6,8 @@ import "core:math/rand"
 import "core:net"
 import "core:fmt"
 import "core:log"
+import "base:runtime"
 import en "core:encoding/endian"
-import sa "core:container/small_array"
 
 Buffer_Serializer :: struct {
 	buffer: []byte,
@@ -295,11 +295,11 @@ serialize_protocol_message :: proc(buffer: []byte, p2p: ^P2P_Session($Game, $Inp
 		}
 		
 		bs_put_frame(b, m.ack_frame) or_return
-		start_frame := sa.get(m.pending_inputs, 0).frame
+		start_frame := m.pending_inputs[0].frame
 		bs_put_frame(b, start_frame) or_return
 
-		bs_put_u8(b, u8(sa.len(m.pending_inputs))) or_return
-		for &pending_input in sa.slice(&m.pending_inputs) {
+		bs_put_u8(b, u8(len(m.pending_inputs))) or_return
+		for &pending_input in m.pending_inputs {
 			p2p.serialize_input(b, pending_input.input) or_return
 		}
 	case Quality_Report:
@@ -358,7 +358,7 @@ deserialize_protocol_message :: proc(buffer: []byte, p2p: ^P2P_Session($Game, $I
 			local_input: Local_Input(Input)
 			local_input.frame = start_frame + Frame(i)
 			local_input.input = p2p.deserialize_input(b) or_return
-			sa.append(&message.pending_inputs, local_input)
+			append(&message.pending_inputs, local_input)
 		}
 
 		m.message = message
@@ -385,6 +385,8 @@ deserialize_protocol_message :: proc(buffer: []byte, p2p: ^P2P_Session($Game, $I
 	ok = true
 	return
 }
+
+import sa "core:container/small_array"
 
 @(test)
 test_serialize_message :: proc(t: ^testing.T) {
@@ -426,7 +428,7 @@ test_serialize_message :: proc(t: ^testing.T) {
 
 		de_message, ok_de := deserialize_protocol_message(buffer[:offset], &p2p)
 		assert(ok_de)
-		assert(message == de_message)
+		assert(runtime.memory_compare(&message, &de_message, size_of(Protocol_Message)) == 0)
 	}
 
 	{ // Protocol Sync Reply
@@ -443,7 +445,7 @@ test_serialize_message :: proc(t: ^testing.T) {
 
 		de_message, ok_de := deserialize_protocol_message(buffer[:offset], &p2p)
 		assert(ok_de)
-		assert(message == de_message)
+		assert(runtime.memory_compare(&message, &de_message, size_of(Protocol_Message)) == 0)
 	}
 
 	{ // Input_Message
@@ -456,7 +458,7 @@ test_serialize_message :: proc(t: ^testing.T) {
 				frame = 100 + Frame(i),
 				input = Test_Input { bool(i % 2) }
 			}
-			sa.append(&message.pending_inputs, local_input)
+			append(&message.pending_inputs, local_input)
 		}
 
 		net_message := Protocol_Message(Test_Input) {
@@ -470,7 +472,7 @@ test_serialize_message :: proc(t: ^testing.T) {
 
 		de_message, ok_de := deserialize_protocol_message(buffer[:offset], &p2p)
 		assert(ok_de)
-		assert(net_message == de_message)
+		assert(runtime.memory_compare(&message, &de_message, size_of(Protocol_Message)) == 0)
 	}
 
 	{ // Quality Report
@@ -487,7 +489,7 @@ test_serialize_message :: proc(t: ^testing.T) {
 
 		de_message, ok_de := deserialize_protocol_message(buffer[:offset], &p2p)
 		assert(ok_de)
-		assert(message == de_message)
+		assert(runtime.memory_compare(&message, &de_message, size_of(Protocol_Message)) == 0)
 	}
 
 	{ // Quality Reply
@@ -503,7 +505,7 @@ test_serialize_message :: proc(t: ^testing.T) {
 
 		de_message, ok_de := deserialize_protocol_message(buffer[:offset], &p2p)
 		assert(ok_de)
-		assert(message == de_message)
+		assert(runtime.memory_compare(&message, &de_message, size_of(Protocol_Message)) == 0)
 	}
 
 	{ // Keep Alive
@@ -517,7 +519,7 @@ test_serialize_message :: proc(t: ^testing.T) {
 
 		de_message, ok_de := deserialize_protocol_message(buffer[:offset], &p2p)
 		assert(ok_de)
-		assert(message == de_message)
+		assert(runtime.memory_compare(&message, &de_message, size_of(Protocol_Message)) == 0)
 	}
 
 	{ // Checksum Report
@@ -534,7 +536,7 @@ test_serialize_message :: proc(t: ^testing.T) {
 
 		de_message, ok_de := deserialize_protocol_message(buffer[:offset], &p2p)
 		assert(ok_de)
-		assert(message == de_message)
+		assert(runtime.memory_compare(&message, &de_message, size_of(Protocol_Message)) == 0)
 	}
 
 	{ // Disconnect Request
@@ -548,6 +550,6 @@ test_serialize_message :: proc(t: ^testing.T) {
 
 		de_message, ok_de := deserialize_protocol_message(buffer[:offset], &p2p)
 		assert(ok_de)
-		assert(message == de_message)
+		assert(runtime.memory_compare(&message, &de_message, size_of(Protocol_Message)) == 0)
 	}
 }

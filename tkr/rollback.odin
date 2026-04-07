@@ -11,8 +11,8 @@ INPUT_QUEUE_LENGTH :: MAX_PREDICTION_FRAMES * 4
 CHECKSUM_FRAME_INTERVAL :: 60
 
 Frame :: distinct i32
-Null_Frame :: Frame(-1)
-Predicted_Frame :: Frame(-2)
+NULL_FRAME :: Frame(-1)
+PREDICTED_FRAME :: Frame(-2)
 
 Game_Speed :: enum {
 	Normal,
@@ -88,9 +88,9 @@ Rollback_Request :: union($Game, $Input: typeid) {
 }
 
 min_frame :: proc(f1, f2: Frame) -> Frame {
-	if f1 == Null_Frame {
+	if f1 == NULL_FRAME {
 		return f2
-	} else if f2 == Null_Frame {
+	} else if f2 == NULL_FRAME {
 		return f1
 	} else {
 		return min(f1, f2)
@@ -99,17 +99,17 @@ min_frame :: proc(f1, f2: Frame) -> Frame {
 
 rollback_init :: proc(rollback: ^Rollback_System($Game, $Input), num_players: int) {
 	for &player_state in rollback.players_inputs {
-		player_state = Player_Rollback_Input(Input) { frame = Null_Frame }
+		player_state = Player_Rollback_Input(Input) { frame = NULL_FRAME }
 	}
 
 	for i in 0..<num_players {
-		rollback.connection_statuses[i].last_received_frame = Null_Frame
+		rollback.connection_statuses[i].last_received_frame = NULL_FRAME
 	}
 
 	rollback.num_players = num_players
-	rollback.first_incorrect_frame = Null_Frame
-	rollback.confirmed_frame       = Null_Frame
-	rollback.confirmed_checksum_report.frame = Null_Frame
+	rollback.first_incorrect_frame = NULL_FRAME
+	rollback.confirmed_frame       = NULL_FRAME
+	rollback.confirmed_checksum_report.frame = NULL_FRAME
 }
 
 rollback_set_forced_rollback_frames :: proc(rollback: ^$T/Rollback_System, num_frames: int) {
@@ -124,7 +124,7 @@ rollback_set_input_delay :: proc(rollback: ^Rollback_System($Game, $Input), play
 		diff := delay - current_delay
 
 		last_input_frame := rollback.connection_statuses[player_index].last_received_frame
-		if last_input_frame == Null_Frame {
+		if last_input_frame == NULL_FRAME {
 			last_input_frame = 0
 		}
 		last_input := rollback.players_inputs[player_index][last_input_frame % INPUT_QUEUE_LENGTH]
@@ -156,7 +156,7 @@ rollback_add_input :: proc(rollback: ^Rollback_System($Game, $Input), player_ind
 	}
 	
 	// Check for miss predictions
-	if player_state.frame == Predicted_Frame && frame < rollback.current_frame {
+	if player_state.frame == PREDICTED_FRAME && frame < rollback.current_frame {
 		if player_state.input != input {
 			rollback.first_incorrect_frame = min_frame(rollback.first_incorrect_frame, frame)
 		}
@@ -179,7 +179,7 @@ rollback_advance_frame :: proc(rollback: ^$T/Rollback_System($Game, $Input)) -> 
 	}
 
 	load_frame :: proc(rollback: ^T, frame: Frame) -> Load_Game(Game) {
-		assert(frame != Null_Frame)
+		assert(frame != NULL_FRAME)
 		assert(frame < rollback.current_frame)
 		assert(frame > rollback.current_frame - MAX_PREDICTION_FRAMES)
 
@@ -258,7 +258,7 @@ rollback_advance_frame :: proc(rollback: ^$T/Rollback_System($Game, $Input)) -> 
 	if rollback.forced_rollback_frames > 0 && rollback.current_frame > 0 {
 		forced_rollback_frame := rollback.current_frame - Frame(rollback.forced_rollback_frames)
 
-		if rollback.first_incorrect_frame != Null_Frame {
+		if rollback.first_incorrect_frame != NULL_FRAME {
 			rollback.first_incorrect_frame = min(rollback.current_frame, forced_rollback_frame)
 		} else {
 			rollback.first_incorrect_frame = forced_rollback_frame
@@ -268,7 +268,7 @@ rollback_advance_frame :: proc(rollback: ^$T/Rollback_System($Game, $Input)) -> 
 	}
 
 	// Execute rollback if necessary
-	if rollback.first_incorrect_frame != Null_Frame {
+	if rollback.first_incorrect_frame != NULL_FRAME {
 		num_frames := rollback.current_frame - rollback.first_incorrect_frame
 		append(&requests, load_frame(rollback, rollback.first_incorrect_frame))
 
@@ -283,7 +283,7 @@ rollback_advance_frame :: proc(rollback: ^$T/Rollback_System($Game, $Input)) -> 
 			rollback.current_frame += 1
 		}
 
-		rollback.first_incorrect_frame = Null_Frame
+		rollback.first_incorrect_frame = NULL_FRAME
 	}
 
 	append(&requests, save_current_state(rollback))
@@ -313,7 +313,7 @@ verified_inputs :: proc(rollback: ^Rollback_System($Game, $Input)) -> (inputs: [
 				// We don't have the input, predict it based on the previous one
 				previous_index := (input_index - 1 + INPUT_QUEUE_LENGTH) % INPUT_QUEUE_LENGTH
 				player_input.input = rollback.players_inputs[player_index][previous_index].input
-				player_input.frame = Predicted_Frame
+				player_input.frame = PREDICTED_FRAME
 				statuses[player_index] = .Predicted
 				inputs[player_index]   = player_input.input
 			}
