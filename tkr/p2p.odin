@@ -138,11 +138,14 @@ Protocol_Message :: struct($Input: typeid) {
 
 default_dynamic_delay_calculation :: proc(rtt_ms: f64) -> (new_input_delay: int) {
 	switch {
-	case rtt_ms < 50:  new_input_delay = 1
-	case rtt_ms < 100: new_input_delay = 2
-	case rtt_ms < 200: new_input_delay = 3
-	case rtt_ms < 300: new_input_delay = 4
-	case:              new_input_delay = 5
+	case rtt_ms < 40:  new_input_delay = 1
+	case rtt_ms < 80:  new_input_delay = 2
+	case rtt_ms < 120: new_input_delay = 3
+	case rtt_ms < 160: new_input_delay = 4
+	case rtt_ms < 200: new_input_delay = 5
+	case rtt_ms < 240: new_input_delay = 6
+	case rtt_ms < 280: new_input_delay = 7
+	case:              new_input_delay = 8
 	}
 	return
 }
