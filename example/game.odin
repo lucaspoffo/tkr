@@ -303,8 +303,7 @@ game_draw :: proc() {
 
 		pings  := make([dynamic]string, context.temp_allocator)
 		frames := make([dynamic]string, context.temp_allocator)
-		for i in 0..<p2p.num_protocols {
-			protocol := &p2p.protocols[i]
+		for &protocol in p2p.protocols {
 			ping := fmt.tprintf("(P%v: %.1f ms)", protocol.client_id, protocol.rtt_secs * 1000)
 			append(&pings, ping)
 

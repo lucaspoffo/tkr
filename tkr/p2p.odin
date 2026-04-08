@@ -26,7 +26,6 @@ DYNAMIC_DELAY_UPDATE_INTERVAL :: 5 * time.Second
 P2P_Session :: struct($Game, $Input: typeid) {
 	fps: f32,
 	num_players:   int,
-	num_protocols: int,
 	syncronizing:  bool,
 	
 	local_input_delay:  int,
@@ -34,7 +33,7 @@ P2P_Session :: struct($Game, $Input: typeid) {
 	last_dynamic_delay: time.Time,
 	dynamic_delay_calculation: #type proc(rtt_ms: f64) -> (new_input_delay: int),
 
-	protocols: [MAX_NUM_PLAYERS]P2P_Protocol(Input),
+	protocols: [dynamic; MAX_NUM_PLAYERS]P2P_Protocol(Input),
 	local_player_index: int,
 	
 	last_local_input_frame_added: Frame,
@@ -193,15 +192,15 @@ p2p_add_local_player :: proc(p2p: ^$T/P2P_Session, player_index: int) {
 	p2p.num_players += 1
 }
 
-p2p_add_remote_player :: proc(p2p: ^$T/P2P_Session, player_index: int, client_id: u64) {
+p2p_add_remote_player :: proc(p2p: ^P2P_Session($Game, $Input), player_index: int, client_id: u64) {
 	p2p.num_players += 1
 
 	// Make sure we are syncronizing only when a remote player is added
 	p2p.syncronizing = true
-	new_protocol_index := p2p.num_protocols
-	new_protocol := &p2p.protocols[new_protocol_index]
-	p2p.num_protocols += 1
-	protocol_init(new_protocol, p2p.num_players, client_id, player_index)
+	new_protocol_index := len(p2p.protocols)
+	new_protocol := P2P_Protocol(Input) {}
+	protocol_init(&new_protocol, p2p.num_players, client_id, player_index)
+	append(&p2p.protocols, new_protocol)
 }
 
 p2p_add_local_input :: proc(p2p: ^$T/P2P_Session, player_index: int, input: $Input) -> bool {
@@ -219,9 +218,9 @@ p2p_set_local_input_delay :: proc(p2p: ^$T/P2P_Session, delay: int) {
 }
 
 p2p_get_protocol :: proc(p2p: ^P2P_Session($Game, $Input), client_id: u64) -> (^P2P_Protocol(Input), bool) {
-	for i in 0..<p2p.num_protocols {
-		if p2p.protocols[i].client_id == client_id {
-			return &p2p.protocols[i], true
+	for &protocol in p2p.protocols {
+		if protocol.client_id == client_id {
+			return &protocol, true
 		}
 	}
 
@@ -243,16 +242,14 @@ p2p_process_message :: proc(p2p: ^P2P_Session($Game, $Input), message: Protocol_
 p2p_update :: proc(p2p: ^P2P_Session($Game, $Input)) -> []Protocol_Message(Input) {
 	messages := make([dynamic]Protocol_Message(Input), allocator = context.temp_allocator)
 
-	for i in 0..<p2p.num_protocols {
-		protocol := &p2p.protocols[i]
-		protocol_messages := protocol_update(&p2p.rollback, protocol, p2p.fps)
+	for &protocol in p2p.protocols {
+		protocol_messages := protocol_update(&p2p.rollback, &protocol, p2p.fps)
 		append(&messages, ..protocol_messages)
 	}
 
 	if p2p.syncronizing {
 		syncronized := true
-		for i in 0..<p2p.num_protocols {
-			protocol := &p2p.protocols[i]
+		for &protocol in p2p.protocols {
 			if !(protocol.state == .Running || protocol.state == .Disconnected) {
 				syncronized = false
 				break
@@ -269,8 +266,7 @@ p2p_update :: proc(p2p: ^P2P_Session($Game, $Input)) -> []Protocol_Message(Input
 			p2p.last_dynamic_delay = now
 
 			max_rtt_secs := 0.0
-			for i in 0..<p2p.num_protocols {
-				protocol := &p2p.protocols[i]
+			for protocol in p2p.protocols {
 				max_rtt_secs = max(max_rtt_secs, protocol.rtt_secs)
 			}
 
@@ -291,8 +287,7 @@ p2p_replicate_local_input :: proc(p2p: ^P2P_Session($Game, $Input), frame: Frame
 		input = p2p.rollback.players_inputs[p2p.local_player_index][input_index].input
 	}
 
-	for i in 0..<p2p.num_protocols {
-		protocol := &p2p.protocols[i]
+	for &protocol in p2p.protocols {
 		if protocol.state != .Disconnected {
 			append(&protocol.pending_local_inputs, local_input)
 		}
@@ -313,8 +308,7 @@ p2p_advance_frame :: proc(p2p: ^P2P_Session($Game, $Input)) -> ([]Rollback_Reque
 		}
 
 		p2p.last_local_input_frame_added = actual_frame
-		for i in 0..<p2p.num_protocols {
-			protocol := &p2p.protocols[i]
+		for &protocol in p2p.protocols {
 			if protocol.state != .Running {
 				continue
 			}
