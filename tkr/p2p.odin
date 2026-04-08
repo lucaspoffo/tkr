@@ -603,6 +603,21 @@ protocol_disconnect :: proc(rollback: ^Rollback_System($Game, $Input), protocol:
 	rollback.connection_statuses[protocol.remote_player_index].disconnected = true
 }
 
+p2p_all_disconnected :: proc(p2p: ^$T/P2P_Session) -> bool {
+	if p2p.syncronizing {
+		return false
+	}
+
+	for i in 0..<p2p.num_protocols {
+		protocol := &p2p.protocols[i]
+		if protocol.state != .Disconnected {
+			return false
+		}
+	}
+
+	return true
+}
+
 dynamic_array_delete_to_index :: proc "contextless" (array: ^$A/[dynamic; $N]$T, index: int) -> (ok: bool) {
 	current_len := len(array)
 	if N > 0 && index < current_len {
