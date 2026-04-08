@@ -13,9 +13,9 @@ when STEAM_ENABLED {
 	steam_transport_shutdown :: proc(p2p: ^$T/P2P_Session) {
 		networking_messages := steam.NetworkingMessages_SteamAPI()
 
-		for i in 0..<p2p.num_protocols {
+		for protocol in p2p.protocols {
 			network_id: steam.SteamNetworkingIdentity
-			steam.NetworkingIdentity_SetSteamID(&network_id, p2p.protocols[i].client_id)
+			steam.NetworkingIdentity_SetSteamID(&network_id, protocol.client_id)
 			steam.NetworkingMessages_CloseSessionWithUser(networking_messages, &network_id)
 		}
 	}

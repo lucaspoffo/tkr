@@ -602,8 +602,7 @@ p2p_all_disconnected :: proc(p2p: ^$T/P2P_Session) -> bool {
 		return false
 	}
 
-	for i in 0..<p2p.num_protocols {
-		protocol := &p2p.protocols[i]
+	for protocol in p2p.protocols {
 		if protocol.state != .Disconnected {
 			return false
 		}
